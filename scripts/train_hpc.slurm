@@ -41,12 +41,7 @@ ENV_ID="${ENV_ID:-Pendulum-v1}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts}"
 SEED="${SEED:-42}"
 MAX_STEPS_PER_EPISODE="${MAX_STEPS_PER_EPISODE:-200}"
-NUM_ENVS="${NUM_ENVS:-6}"
-BATCH_SIZE="${BATCH_SIZE:-256}"
-UPDATES_PER_STEP="${UPDATES_PER_STEP:-1}"
-WARMUP_STEPS="${WARMUP_STEPS:-1024}"
-MIXED_PRECISION="${MIXED_PRECISION:-1}"
-XLA="${XLA:-0}"
+NUM_ENVS="${NUM_ENVS:-1}"
 PYTHON_MODULE="${PYTHON_MODULE:-python/3.11}"
 EXPECTED_PYTHON="${EXPECTED_PYTHON:-3.11}"
 REQUIRE_GPU="${REQUIRE_GPU:-1}"
@@ -105,7 +100,6 @@ CPU_THREADS="${SLURM_CPUS_PER_TASK:-6}"
 export OMP_NUM_THREADS="$CPU_THREADS"
 export TF_NUM_INTRAOP_THREADS="$CPU_THREADS"
 export TF_NUM_INTEROP_THREADS=2
-export TF_GPU_THREAD_MODE=gpu_private
 
 echo "CPU threads: $CPU_THREADS"
 echo "OMP_NUM_THREADS: $OMP_NUM_THREADS"
@@ -177,11 +171,6 @@ echo "Episodes: $EPISODES"
 echo "Env id: $ENV_ID"
 echo "Max steps/episode: $MAX_STEPS_PER_EPISODE"
 echo "Parallel envs: $NUM_ENVS"
-echo "Batch size: $BATCH_SIZE"
-echo "Updates per step: $UPDATES_PER_STEP"
-echo "Warmup steps: $WARMUP_STEPS"
-echo "Mixed precision: $MIXED_PRECISION"
-echo "XLA: $XLA"
 echo "Seed: $SEED"
 echo "Output dir: $OUTPUT_DIR"
 echo "Require GPU: $REQUIRE_GPU"
@@ -209,12 +198,6 @@ if [[ -n "${SLURM_GPUS:-}" && "${SLURM_GPUS}" -gt 1 ]]; then
   echo "Note: This training script is single-process DDPG; requesting >1 GPU usually does not speed it up much."
 fi
 
-recommended_cpus=$((NUM_ENVS + 4))
-if (( CPU_THREADS < recommended_cpus )); then
-  echo "Warning: NUM_ENVS=$NUM_ENVS is likely under-provisioned for CPU_THREADS=$CPU_THREADS."
-  echo "Recommended cpus-per-task is at least $recommended_cpus for this env parallelism."
-fi
-
 srun python3 train.py \
   --episodes "$EPISODES" \
   --env-id "$ENV_ID" \
@@ -222,11 +205,6 @@ srun python3 train.py \
   --seed "$SEED" \
   --max-steps-per-episode "$MAX_STEPS_PER_EPISODE" \
   --num-envs "$NUM_ENVS" \
-  --batch-size "$BATCH_SIZE" \
-  --updates-per-step "$UPDATES_PER_STEP" \
-  --warmup-steps "$WARMUP_STEPS" \
-  --mixed-precision "$MIXED_PRECISION" \
-  --xla "$XLA" \
   --require-gpu "$REQUIRE_GPU"
 
 auto_push_artifacts() {

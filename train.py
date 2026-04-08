@@ -24,10 +24,8 @@ class DDPGConfig:
     gamma: float = 0.99
     tau: float = 0.005
     buffer_capacity: int = 50000
-    batch_size: int = 256
+    batch_size: int = 64
     max_steps_per_episode: int = 200
-    updates_per_step: int = 1
-    warmup_steps: int = 1024
 
 
 class OUActionNoise:
@@ -176,11 +174,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-gpu", type=int, default=0, choices=[0, 1], help="Exit with error when no GPU is detected.")
     parser.add_argument("--max-steps-per-episode", type=int, default=200, help="Maximum environment steps per episode.")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environment instances for faster simulation.")
-    parser.add_argument("--batch-size", type=int, default=256, help="Replay buffer sample batch size for each gradient update.")
-    parser.add_argument("--updates-per-step", type=int, default=1, help="Number of gradient updates to run after each env step.")
-    parser.add_argument("--warmup-steps", type=int, default=1024, help="Minimum replay entries before training starts.")
-    parser.add_argument("--mixed-precision", type=int, default=1, choices=[0, 1], help="Enable mixed_float16 policy on GPU for faster training.")
-    parser.add_argument("--xla", type=int, default=0, choices=[0, 1], help="Enable TensorFlow XLA JIT compilation for train_step.")
     return parser.parse_args()
 
 
@@ -190,7 +183,7 @@ def set_seed(seed: int) -> None:
     tf.random.set_seed(seed)
 
 
-@tf.function(reduce_retracing=True)
+@tf.function
 def train_step(
     state_batch: tf.Tensor,
     action_batch: tf.Tensor,
@@ -228,26 +221,15 @@ def main() -> None:
     args = parse_args()
     if args.num_envs < 1:
         raise ValueError("--num-envs must be >= 1")
-    if args.batch_size < 1:
-        raise ValueError("--batch-size must be >= 1")
-    if args.updates_per_step < 1:
-        raise ValueError("--updates-per-step must be >= 1")
-    if args.warmup_steps < 1:
-        raise ValueError("--warmup-steps must be >= 1")
     if args.render and args.num_envs > 1:
         raise ValueError("--render is only supported with --num-envs=1")
 
     cfg = DDPGConfig(
         total_episodes=args.episodes,
         max_steps_per_episode=args.max_steps_per_episode,
-        batch_size=args.batch_size,
-        updates_per_step=args.updates_per_step,
-        warmup_steps=max(args.warmup_steps, args.batch_size),
     )
 
     set_seed(args.seed)
-
-    tf.config.optimizer.set_jit(args.xla == 1)
 
     render_mode = "human" if args.render else None
     if args.num_envs == 1:
@@ -275,21 +257,11 @@ def main() -> None:
     print(f"Environment: {args.env_id}")
     print(f"Action bounds: low={lower_bound} high={upper_bound}")
     print(f"Parallel envs: {args.num_envs}")
-    print(f"Batch size: {cfg.batch_size}")
-    print(f"Updates per step: {cfg.updates_per_step}")
-    print(f"Warmup steps: {cfg.warmup_steps}")
-    print(f"XLA JIT: {bool(args.xla)}")
 
     gpus = tf.config.list_physical_devices("GPU")
     print(f"Visible GPUs: {len(gpus)}")
     if args.require_gpu == 1 and len(gpus) == 0:
         raise RuntimeError("No GPU detected, and --require-gpu=1 was requested.")
-
-    if args.mixed_precision == 1 and len(gpus) > 0:
-        tf.keras.mixed_precision.set_global_policy("mixed_float16")
-        print("Mixed precision policy: mixed_float16")
-    else:
-        print("Mixed precision policy: float32")
 
     noise_shape = (1,) if args.num_envs == 1 else (args.num_envs, num_actions)
     noise = OUActionNoise(mean=np.zeros(noise_shape), std_deviation=float(cfg.std_dev) * np.ones(noise_shape))
@@ -314,8 +286,6 @@ def main() -> None:
 
     episodic_rewards: list[float] = []
     rolling_avg_rewards: list[float] = []
-    training_started = False
-
     for episode in range(cfg.total_episodes):
         if args.num_envs == 1:
             prev_state, _ = env.reset(seed=args.seed + episode)
@@ -353,28 +323,24 @@ def main() -> None:
                 replay_buffer.record_batch(prev_state, actions, reward, state)
                 episode_rewards += reward.astype(np.float32)
 
-            if replay_buffer.size() >= cfg.warmup_steps and replay_buffer.can_sample():
-                if not training_started:
-                    training_started = True
-                    print(f"Warmup complete at replay size {replay_buffer.size()}; starting gradient updates.")
-                for _ in range(cfg.updates_per_step):
-                    state_batch, action_batch, reward_batch, next_state_batch = replay_buffer.sample()
-                    train_step(
-                        state_batch=state_batch,
-                        action_batch=action_batch,
-                        reward_batch=reward_batch,
-                        next_state_batch=next_state_batch,
-                        actor_model=actor_model,
-                        critic_model=critic_model,
-                        target_actor=target_actor,
-                        target_critic=target_critic,
-                        actor_optimizer=actor_optimizer,
-                        critic_optimizer=critic_optimizer,
-                        gamma=cfg.gamma,
-                    )
+            if replay_buffer.can_sample():
+                state_batch, action_batch, reward_batch, next_state_batch = replay_buffer.sample()
+                train_step(
+                    state_batch=state_batch,
+                    action_batch=action_batch,
+                    reward_batch=reward_batch,
+                    next_state_batch=next_state_batch,
+                    actor_model=actor_model,
+                    critic_model=critic_model,
+                    target_actor=target_actor,
+                    target_critic=target_critic,
+                    actor_optimizer=actor_optimizer,
+                    critic_optimizer=critic_optimizer,
+                    gamma=cfg.gamma,
+                )
 
-                    update_targets(target_actor, actor_model, cfg.tau)
-                    update_targets(target_critic, critic_model, cfg.tau)
+                update_targets(target_actor, actor_model, cfg.tau)
+                update_targets(target_critic, critic_model, cfg.tau)
 
             if args.num_envs == 1:
                 if terminated or truncated:
@@ -412,17 +378,13 @@ def main() -> None:
 
     metadata = {
         "created_at": run_stamp,
-    "env": args.env_id,
+        "env": args.env_id,
         "seed": args.seed,
         "episodes": cfg.total_episodes,
         "max_steps_per_episode": cfg.max_steps_per_episode,
         "num_envs": args.num_envs,
         "buffer_capacity": cfg.buffer_capacity,
         "batch_size": cfg.batch_size,
-        "updates_per_step": cfg.updates_per_step,
-        "warmup_steps": cfg.warmup_steps,
-        "xla": bool(args.xla),
-        "mixed_precision": bool(args.mixed_precision),
         "gamma": cfg.gamma,
         "tau": cfg.tau,
         "actor_lr": cfg.actor_lr,

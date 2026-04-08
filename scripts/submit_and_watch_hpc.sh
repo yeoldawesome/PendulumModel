@@ -13,15 +13,9 @@ ENV_ID="Pendulum-v1"
 OUTPUT_DIR="artifacts"
 SEED="42"
 MAX_STEPS_PER_EPISODE="200"
-NUM_ENVS="6"
-BATCH_SIZE="256"
-UPDATES_PER_STEP="1"
-WARMUP_STEPS="1024"
-MIXED_PRECISION="1"
-XLA="0"
+NUM_ENVS="1"
 GPUS="1"
-CPUS="8"
-CPUS_SET_BY_USER="0"
+CPUS="6"
 SCRIPT_PATH="scripts/train_hpc.slurm"
 AUTO_PUSH="1"
 PUSH_BRANCH=""
@@ -68,33 +62,12 @@ while [[ $# -gt 0 ]]; do
       NUM_ENVS="$2"
       shift 2
       ;;
-    --batch-size)
-      BATCH_SIZE="$2"
-      shift 2
-      ;;
-    --updates-per-step)
-      UPDATES_PER_STEP="$2"
-      shift 2
-      ;;
-    --warmup-steps)
-      WARMUP_STEPS="$2"
-      shift 2
-      ;;
-    --mixed-precision)
-      MIXED_PRECISION="$2"
-      shift 2
-      ;;
-    --xla)
-      XLA="$2"
-      shift 2
-      ;;
     --gpus)
       GPUS="$2"
       shift 2
       ;;
     --cpus)
       CPUS="$2"
-      CPUS_SET_BY_USER="1"
       shift 2
       ;;
     --script)
@@ -148,14 +121,9 @@ Optional overrides:
   --output-dir  Training output directory (default: artifacts)
   --seed        Training random seed (default: 42)
   --max-steps   Max env steps per episode (default: 200)
-  --num-envs    Number of parallel simulation envs (default: 6)
-  --batch-size  Training batch size per update (default: 256)
-  --updates-per-step  Gradient updates after each env step (default: 1)
-  --warmup-steps Replay entries before updates begin (default: 1024)
-  --mixed-precision  Enable mixed precision, 0 or 1 (default: 1)
-  --xla         Enable XLA JIT, 0 or 1 (default: 0)
+  --num-envs    Number of parallel simulation envs (default: 1)
   --gpus        Number of A100 GPUs to request (default: 1)
-  --cpus        CPUs per task (default: 8)
+  --cpus        CPUs per task (default: 6)
   --script      Slurm script path (default: scripts/train_hpc.slurm)
   --push        Auto-commit and push artifacts after successful training (default)
   --no-push     Disable auto-push
@@ -204,38 +172,6 @@ if ! [[ "$NUM_ENVS" =~ ^[1-9][0-9]*$ ]]; then
   exit 1
 fi
 
-if ! [[ "$BATCH_SIZE" =~ ^[1-9][0-9]*$ ]]; then
-  echo "Invalid --batch-size value: $BATCH_SIZE (must be a positive integer)." >&2
-  exit 1
-fi
-
-if ! [[ "$UPDATES_PER_STEP" =~ ^[1-9][0-9]*$ ]]; then
-  echo "Invalid --updates-per-step value: $UPDATES_PER_STEP (must be a positive integer)." >&2
-  exit 1
-fi
-
-if ! [[ "$WARMUP_STEPS" =~ ^[1-9][0-9]*$ ]]; then
-  echo "Invalid --warmup-steps value: $WARMUP_STEPS (must be a positive integer)." >&2
-  exit 1
-fi
-
-if ! [[ "$MIXED_PRECISION" =~ ^[01]$ ]]; then
-  echo "Invalid --mixed-precision value: $MIXED_PRECISION (must be 0 or 1)." >&2
-  exit 1
-fi
-
-if ! [[ "$XLA" =~ ^[01]$ ]]; then
-  echo "Invalid --xla value: $XLA (must be 0 or 1)." >&2
-  exit 1
-fi
-
-if [[ "$CPUS_SET_BY_USER" == "0" ]]; then
-  suggested_cpus=$((NUM_ENVS + 4))
-  if (( suggested_cpus > CPUS )); then
-    CPUS="$suggested_cpus"
-  fi
-fi
-
 mkdir -p logs
 
 echo "Submitting DDPG pendulum job..."
@@ -245,11 +181,6 @@ echo "  episodes: $EPISODES"
 echo "  env-id: $ENV_ID"
 echo "  max-steps: $MAX_STEPS_PER_EPISODE"
 echo "  num-envs: $NUM_ENVS"
-echo "  batch-size: $BATCH_SIZE"
-echo "  updates-per-step: $UPDATES_PER_STEP"
-echo "  warmup-steps: $WARMUP_STEPS"
-echo "  mixed-precision: $MIXED_PRECISION"
-echo "  xla: $XLA"
 echo "  output: $OUTPUT_DIR"
 echo "  seed: $SEED"
 echo "  gpus: $GPUS"
@@ -276,7 +207,7 @@ submit_output=$(sbatch \
   --cpus-per-task="$CPUS" \
   --mail-user="$EMAIL" \
   --mail-type=BEGIN,END,FAIL \
-  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",BATCH_SIZE="$BATCH_SIZE",UPDATES_PER_STEP="$UPDATES_PER_STEP",WARMUP_STEPS="$WARMUP_STEPS",MIXED_PRECISION="$MIXED_PRECISION",XLA="$XLA",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
+  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
   "$SCRIPT_PATH")
 
 echo "$submit_output"
