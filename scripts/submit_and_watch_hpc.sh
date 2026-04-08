@@ -8,7 +8,7 @@ set -euo pipefail
 EMAIL="dnlong5@iastate.edu"
 ACCOUNT="s2026.se.4390.01"
 PARTITION="instruction"
-EPISODES="100"
+EPISODES="10"
 OUTPUT_DIR="artifacts"
 SEED="42"
 SCRIPT_PATH="scripts/train_hpc.slurm"
