@@ -25,7 +25,7 @@ class DDPGConfig:
     tau: float = 0.005
     buffer_capacity: int = 50000
     batch_size: int = 64
-    max_steps_per_episode: int = 200
+    max_steps_per_episode: int = 500
 
 
 class OUActionNoise:
@@ -172,7 +172,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--render", action="store_true", help="Render environment while training (slower; not for HPC).")
     parser.add_argument("--require-gpu", type=int, default=0, choices=[0, 1], help="Exit with error when no GPU is detected.")
-    parser.add_argument("--max-steps-per-episode", type=int, default=200, help="Maximum environment steps per episode.")
+    parser.add_argument("--max-steps-per-episode", type=int, default=500, help="Maximum environment steps per episode.")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environment instances for faster simulation.")
     return parser.parse_args()
 

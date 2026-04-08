@@ -1,5 +1,6 @@
 import pathlib
 import threading
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -30,9 +31,14 @@ class PendulumViewerApp(tk.Tk):
         self.env_id_var = tk.StringVar(value="InvertedDoublePendulum-v5")
         self.episodes_var = tk.StringVar(value="3")
         self.max_steps_var = tk.StringVar(value="200")
+        self.frame_delay_ms_var = tk.StringVar(value="300")
         self.seed_var = tk.StringVar(value="42")
         self.start_episode_var = tk.StringVar(value="1")
+        self.use_2d_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="Ready")
+
+        self.sim_window: tk.Toplevel | None = None
+        self.sim_canvas: tk.Canvas | None = None
 
         self._build_ui()
         self.refresh_models()
@@ -69,14 +75,19 @@ class PendulumViewerApp(tk.Tk):
         ttk.Label(container, text="Max steps:").grid(row=3, column=1, sticky="e", pady=(8, 0))
         ttk.Entry(container, textvariable=self.max_steps_var, width=10).grid(row=3, column=2, sticky="w", pady=(8, 0))
 
-        ttk.Label(container, text="Seed:").grid(row=4, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(container, textvariable=self.seed_var, width=10).grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        ttk.Label(container, text="Frame delay (ms):").grid(row=4, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.frame_delay_ms_var, width=10).grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(container, text="Start episode:").grid(row=4, column=2, sticky="e", pady=(8, 0))
-        ttk.Entry(container, textvariable=self.start_episode_var, width=10).grid(row=4, column=3, sticky="w", pady=(8, 0))
+        ttk.Label(container, text="Seed:").grid(row=4, column=2, sticky="e", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.seed_var, width=10).grid(row=4, column=3, sticky="w", pady=(8, 0))
+
+        ttk.Label(container, text="Start episode:").grid(row=5, column=2, sticky="e", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.start_episode_var, width=10).grid(row=5, column=3, sticky="w", pady=(8, 0))
+
+        ttk.Checkbutton(container, text="Use 2D visualizer", variable=self.use_2d_var).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         buttons = ttk.Frame(container)
-        buttons.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(16, 8))
+        buttons.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(16, 8))
         buttons.columnconfigure((0, 1, 2), weight=1)
 
         self.run_model_btn = ttk.Button(buttons, text="Run Loaded Model", command=self.run_loaded_model)
@@ -88,17 +99,17 @@ class PendulumViewerApp(tk.Tk):
         self.stop_btn = ttk.Button(buttons, text="Stop", command=self.stop_run, state=tk.DISABLED)
         self.stop_btn.grid(row=0, column=2, sticky="ew")
 
-        ttk.Label(container, text="Episode rewards:").grid(row=6, column=0, columnspan=4, sticky="w")
+        ttk.Label(container, text="Episode rewards:").grid(row=7, column=0, columnspan=4, sticky="w")
 
         self.results = tk.Listbox(container, height=12)
-        self.results.grid(row=7, column=0, columnspan=4, sticky="nsew", pady=(6, 8))
+        self.results.grid(row=8, column=0, columnspan=4, sticky="nsew", pady=(6, 8))
 
         status = ttk.Label(container, textvariable=self.status_var)
-        status.grid(row=8, column=0, columnspan=4, sticky="w")
+        status.grid(row=9, column=0, columnspan=4, sticky="w")
 
         container.columnconfigure(1, weight=1)
         container.columnconfigure(2, weight=1)
-        container.rowconfigure(7, weight=1)
+        container.rowconfigure(8, weight=1)
 
     def refresh_models(self) -> None:
         artifacts_dir = pathlib.Path("artifacts")
@@ -149,14 +160,15 @@ class PendulumViewerApp(tk.Tk):
         try:
             episodes = int(self.episodes_var.get())
             max_steps = int(self.max_steps_var.get())
+            frame_delay_ms = int(self.frame_delay_ms_var.get())
             seed = int(self.seed_var.get())
             start_episode = int(self.start_episode_var.get())
-            if episodes <= 0 or max_steps <= 0 or start_episode <= 0:
+            if episodes <= 0 or max_steps <= 0 or start_episode <= 0 or frame_delay_ms < 0:
                 raise ValueError
         except ValueError:
             messagebox.showerror(
                 "Invalid input",
-                "Episodes, max steps, seed, and start episode must be valid integers. Episodes/max steps/start episode must be > 0.",
+                "Episodes, max steps, frame delay, seed, and start episode must be valid integers. Episodes/max steps/start episode must be > 0 and frame delay must be >= 0.",
             )
             return
 
@@ -169,6 +181,8 @@ class PendulumViewerApp(tk.Tk):
                 "use_model": use_model,
                 "episodes": episodes,
                 "max_steps": max_steps,
+                "frame_delay_ms": frame_delay_ms,
+                "use_2d": bool(self.use_2d_var.get()),
                 "seed": seed,
                 "start_episode": start_episode,
                 "model_path": self.model_var.get().strip(),
@@ -191,11 +205,91 @@ class PendulumViewerApp(tk.Tk):
         self.results.insert(tk.END, f"Episode {episode_idx:03d} | Reward: {reward:.2f}")
         self.results.see(tk.END)
 
+    def _open_2d_window(self, env_id: str) -> None:
+        if self.sim_window is not None and self.sim_window.winfo_exists():
+            self.sim_window.destroy()
+
+        self.sim_window = tk.Toplevel(self)
+        self.sim_window.title(f"2D Visualizer - {env_id}")
+        self.sim_window.geometry("940x620")
+
+        self.sim_canvas = tk.Canvas(self.sim_window, width=900, height=560, bg="white")
+        self.sim_canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    def _draw_2d_state(self, env_id: str, state: np.ndarray, episode_idx: int, step_idx: int) -> None:
+        if self.sim_window is None or not self.sim_window.winfo_exists() or self.sim_canvas is None:
+            return
+
+        canvas = self.sim_canvas
+        canvas.delete("all")
+        width = int(canvas.winfo_width() or 900)
+        height = int(canvas.winfo_height() or 560)
+
+        canvas.create_text(12, 12, anchor="nw", text=f"{env_id} | Episode {episode_idx} | Step {step_idx}", font=("Segoe UI", 11, "bold"))
+
+        if env_id == "Pendulum-v1":
+            pivot_x = width // 2
+            pivot_y = 130
+            length = min(width, height) * 0.30
+
+            theta = float(np.arctan2(state[1], state[0]))
+            bob_x = pivot_x + length * np.sin(theta)
+            bob_y = pivot_y - length * np.cos(theta)
+
+            canvas.create_line(0, pivot_y + length + 40, width, pivot_y + length + 40, fill="#b0b0b0", width=2)
+            canvas.create_line(pivot_x, pivot_y, bob_x, bob_y, fill="#1f77b4", width=8)
+            canvas.create_oval(pivot_x - 8, pivot_y - 8, pivot_x + 8, pivot_y + 8, fill="#333", outline="")
+            canvas.create_oval(bob_x - 18, bob_y - 18, bob_x + 18, bob_y + 18, fill="#ff7f0e", outline="")
+            canvas.create_text(12, 36, anchor="nw", text="2D pendulum: swing-up + balance", font=("Segoe UI", 10))
+            return
+
+        rail_y = int(height * 0.70)
+        center_x = width // 2
+        scale_x = min(width * 0.25, 220)
+        cart_w = 95
+        cart_h = 40
+
+        cart_x = float(state[0])
+        theta1 = float(np.arctan2(state[1], state[3]))
+        theta2 = float(np.arctan2(state[2], state[4]))
+
+        cart_cx = np.clip(center_x + cart_x * scale_x, 70, width - 70)
+        cart_left = cart_cx - cart_w / 2
+        cart_right = cart_cx + cart_w / 2
+        cart_top = rail_y - cart_h
+        cart_bottom = rail_y
+
+        canvas.create_line(40, rail_y, width - 40, rail_y, fill="#888", width=4)
+        canvas.create_rectangle(cart_left, cart_top, cart_right, cart_bottom, fill="#4e79a7", outline="")
+
+        wheel_r = 10
+        canvas.create_oval(cart_left + 10 - wheel_r, rail_y - wheel_r, cart_left + 10 + wheel_r, rail_y + wheel_r, fill="#222", outline="")
+        canvas.create_oval(cart_right - 10 - wheel_r, rail_y - wheel_r, cart_right - 10 + wheel_r, rail_y + wheel_r, fill="#222", outline="")
+
+        pivot_x = cart_cx
+        pivot_y = cart_top
+        l1 = min(width, height) * 0.24
+        l2 = min(width, height) * 0.21
+
+        p1_x = pivot_x + l1 * np.sin(theta1)
+        p1_y = pivot_y - l1 * np.cos(theta1)
+        p2_x = p1_x + l2 * np.sin(theta2)
+        p2_y = p1_y - l2 * np.cos(theta2)
+
+        canvas.create_line(pivot_x, pivot_y, p1_x, p1_y, fill="#f28e2b", width=8)
+        canvas.create_line(p1_x, p1_y, p2_x, p2_y, fill="#e15759", width=7)
+        canvas.create_oval(pivot_x - 7, pivot_y - 7, pivot_x + 7, pivot_y + 7, fill="#333", outline="")
+        canvas.create_oval(p1_x - 9, p1_y - 9, p1_x + 9, p1_y + 9, fill="#333", outline="")
+        canvas.create_oval(p2_x - 12, p2_y - 12, p2_x + 12, p2_y + 12, fill="#59a14f", outline="")
+        canvas.create_text(12, 36, anchor="nw", text="2D double pendulum on cart: move cart + balance up", font=("Segoe UI", 10))
+
     def _run_episodes(
         self,
         use_model: bool,
         episodes: int,
         max_steps: int,
+        frame_delay_ms: int,
+        use_2d: bool,
         seed: int,
         start_episode: int,
         model_path: str,
@@ -214,7 +308,13 @@ class PendulumViewerApp(tk.Tk):
             load_error: Exception | None = None
 
             for candidate_env_id in env_candidates:
-                candidate_env = gym.make(candidate_env_id, render_mode="human")
+                if use_2d:
+                    candidate_env = gym.make(candidate_env_id)
+                else:
+                    try:
+                        candidate_env = gym.make(candidate_env_id, render_mode="human", width=1280, height=720)
+                    except TypeError:
+                        candidate_env = gym.make(candidate_env_id, render_mode="human")
                 if not isinstance(candidate_env.action_space, gym.spaces.Box):
                     candidate_env.close()
                     continue
@@ -258,6 +358,16 @@ class PendulumViewerApp(tk.Tk):
             if use_model and resolved_env_id != env_id:
                 self.after(0, self.env_id_var.set, resolved_env_id)
 
+            if use_2d:
+                window_ready = threading.Event()
+
+                def init_window() -> None:
+                    self._open_2d_window(resolved_env_id)
+                    window_ready.set()
+
+                self.after(0, init_window)
+                window_ready.wait(timeout=2)
+
             mode_text = "model" if use_model else "random policy"
             self.after(
                 0,
@@ -273,7 +383,10 @@ class PendulumViewerApp(tk.Tk):
                 state, _ = env.reset(seed=seed + episode_idx - 1)
                 episode_reward = 0.0
 
-                for _ in range(max_steps):
+                if use_2d:
+                    self.after(0, self._draw_2d_state, resolved_env_id, state.copy(), episode_idx, 0)
+
+                for step_idx in range(max_steps):
                     if self.stop_event.is_set():
                         break
 
@@ -285,6 +398,10 @@ class PendulumViewerApp(tk.Tk):
                         action = env.action_space.sample().astype(np.float32)
 
                     state, reward, terminated, truncated, _ = env.step(action)
+                    if use_2d:
+                        self.after(0, self._draw_2d_state, resolved_env_id, state.copy(), episode_idx, step_idx + 1)
+                    if frame_delay_ms > 0:
+                        time.sleep(frame_delay_ms / 1000.0)
                     episode_reward += float(reward)
                     if terminated or truncated:
                         break

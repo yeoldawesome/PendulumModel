@@ -12,7 +12,7 @@ EPISODES="10"
 ENV_ID="InvertedDoublePendulum-v5"
 OUTPUT_DIR="artifacts"
 SEED="42"
-MAX_STEPS_PER_EPISODE="200"
+MAX_STEPS_PER_EPISODE="500"
 NUM_ENVS="1"
 GPUS="1"
 CPUS="6"
@@ -120,7 +120,7 @@ Optional overrides:
   --env-id      Gymnasium environment id (default: InvertedDoublePendulum-v5)
   --output-dir  Training output directory (default: artifacts)
   --seed        Training random seed (default: 42)
-  --max-steps   Max env steps per episode (default: 200)
+  --max-steps   Max env steps per episode (default: 500)
   --num-envs    Number of parallel simulation envs (default: 1)
   --gpus        Number of A100 GPUs to request (default: 1)
   --cpus        CPUs per task (default: 6)
