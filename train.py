@@ -120,13 +120,10 @@ def choose_action(state: np.ndarray, noise: OUActionNoise, actor_model: keras.Mo
 
 
 def update_targets(target: keras.Model, source: keras.Model, tau: float) -> None:
-    target_weights = target.get_weights()
-    source_weights = source.get_weights()
-
-    for index in range(len(target_weights)):
-        target_weights[index] = source_weights[index] * tau + target_weights[index] * (1.0 - tau)
-
-    target.set_weights(target_weights)
+    tau_tensor = tf.convert_to_tensor(tau, dtype=tf.float32)
+    one_minus_tau = tf.convert_to_tensor(1.0, dtype=tf.float32) - tau_tensor
+    for target_var, source_var in zip(target.weights, source.weights):
+        target_var.assign(source_var * tau_tensor + target_var * one_minus_tau)
 
 
 def parse_args() -> argparse.Namespace:

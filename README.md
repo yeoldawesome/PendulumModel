@@ -20,6 +20,21 @@ pip install -r requirements.txt
 python train.py --episodes 5 --output-dir artifacts
 ```
 
+## View Pendulum Episodes with a GUI
+
+After training at least one model, you can launch a desktop viewer that loads actor weights and runs rendered Pendulum episodes.
+
+```bash
+python viewer_gui.py
+```
+
+In the GUI:
+
+- Select a `pendulum_actor_*.weights.h5` file from `artifacts/` (or browse to any weights file).
+- Set number of episodes, max steps, and seed.
+- Click `Run Loaded Model` to watch your trained policy in the Gym window.
+- Click `Run Random Policy` for a baseline comparison.
+
 ## Run on ISU Nova HPC
 
 1. Copy this repo to Nova and `cd` into it.
