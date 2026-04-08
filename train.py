@@ -167,7 +167,7 @@ def update_targets(target: keras.Model, source: keras.Model, tau: float) -> None
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train DDPG on a continuous-control Gymnasium environment with Keras.")
     parser.add_argument("--episodes", type=int, default=100, help="Number of training episodes.")
-    parser.add_argument("--env-id", type=str, default="Pendulum-v1", help="Gymnasium environment id (for example Pendulum-v1 or InvertedDoublePendulum-v4).")
+    parser.add_argument("--env-id", type=str, default="InvertedDoublePendulum-v5", help="Gymnasium environment id (for example Pendulum-v1 or InvertedDoublePendulum-v5).")
     parser.add_argument("--output-dir", type=str, default="artifacts", help="Output directory for model files and metadata.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--render", action="store_true", help="Render environment while training (slower; not for HPC).")

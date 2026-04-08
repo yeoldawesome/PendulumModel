@@ -27,7 +27,7 @@ class PendulumViewerApp(tk.Tk):
         self.runner_thread: threading.Thread | None = None
 
         self.model_var = tk.StringVar()
-        self.env_id_var = tk.StringVar(value="InvertedDoublePendulum-v4")
+        self.env_id_var = tk.StringVar(value="InvertedDoublePendulum-v5")
         self.episodes_var = tk.StringVar(value="3")
         self.max_steps_var = tk.StringVar(value="200")
         self.seed_var = tk.StringVar(value="42")
@@ -49,7 +49,7 @@ class PendulumViewerApp(tk.Tk):
             container,
             textvariable=self.env_id_var,
             width=40,
-            values=("Pendulum-v1", "InvertedDoublePendulum-v4"),
+            values=("Pendulum-v1", "InvertedDoublePendulum-v5"),
         )
         env_combo.grid(row=1, column=1, columnspan=2, sticky="w", padx=(8, 8))
 
@@ -204,22 +204,66 @@ class PendulumViewerApp(tk.Tk):
         actor_model = None
         env = None
         try:
-            env = gym.make(env_id, render_mode="human")
-            if not isinstance(env.action_space, gym.spaces.Box):
-                raise ValueError(f"{env_id} must have continuous Box actions for this viewer.")
-            num_states = env.observation_space.shape[0]
-            num_actions = env.action_space.shape[0]
-            upper_bound = env.action_space.high.astype(np.float32)
-            lower_bound = env.action_space.low.astype(np.float32)
+            env_candidates = [env_id, "InvertedDoublePendulum-v5", "Pendulum-v1"]
+            # Preserve order while removing duplicates.
+            env_candidates = list(dict.fromkeys(env_candidates))
 
-            if use_model:
-                actor_model = get_actor(num_states=num_states, num_actions=num_actions, upper_bound=upper_bound)
-                # Build model variables before loading weights.
-                actor_model(np.zeros((1, num_states), dtype=np.float32), training=False)
-                actor_model.load_weights(model_path)
+            resolved_env_id = env_id
+            upper_bound = None
+            lower_bound = None
+            load_error: Exception | None = None
+
+            for candidate_env_id in env_candidates:
+                candidate_env = gym.make(candidate_env_id, render_mode="human")
+                if not isinstance(candidate_env.action_space, gym.spaces.Box):
+                    candidate_env.close()
+                    continue
+
+                candidate_num_states = candidate_env.observation_space.shape[0]
+                candidate_num_actions = candidate_env.action_space.shape[0]
+                candidate_upper_bound = candidate_env.action_space.high.astype(np.float32)
+                candidate_lower_bound = candidate_env.action_space.low.astype(np.float32)
+
+                if use_model:
+                    candidate_actor = get_actor(
+                        num_states=candidate_num_states,
+                        num_actions=candidate_num_actions,
+                        upper_bound=candidate_upper_bound,
+                    )
+                    # Build model variables before loading weights.
+                    candidate_actor(np.zeros((1, candidate_num_states), dtype=np.float32), training=False)
+                    try:
+                        candidate_actor.load_weights(model_path)
+                    except Exception as exc:  # noqa: BLE001
+                        load_error = exc
+                        candidate_env.close()
+                        continue
+                    actor_model = candidate_actor
+
+                env = candidate_env
+                resolved_env_id = candidate_env_id
+                upper_bound = candidate_upper_bound
+                lower_bound = candidate_lower_bound
+                break
+
+            if env is None:
+                if use_model and load_error is not None:
+                    raise ValueError(
+                        "Could not load this model for any supported environment shape "
+                        "(InvertedDoublePendulum-v5 or Pendulum-v1). "
+                        f"Last error: {load_error}"
+                    ) from load_error
+                raise ValueError("Could not create a supported continuous-control environment for viewer.")
+
+            if use_model and resolved_env_id != env_id:
+                self.after(0, self.env_id_var.set, resolved_env_id)
 
             mode_text = "model" if use_model else "random policy"
-            self.after(0, self.status_var.set, f"Running {episodes} episode(s) with {mode_text} from episode {start_episode}...")
+            self.after(
+                0,
+                self.status_var.set,
+                f"Running {episodes} episode(s) with {mode_text} in {resolved_env_id} from episode {start_episode}...",
+            )
 
             for local_idx in range(episodes):
                 if self.stop_event.is_set():
