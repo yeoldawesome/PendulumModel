@@ -48,8 +48,10 @@ CRITIC_LR="${CRITIC_LR:-0.001}"
 BUFFER_CAPACITY="${BUFFER_CAPACITY:-200000}"
 BATCH_SIZE="${BATCH_SIZE:-128}"
 NOISE_START="${NOISE_START:-0.3}"
-NOISE_END="${NOISE_END:-0.05}"
-NOISE_DECAY_EPISODES="${NOISE_DECAY_EPISODES:-300}"
+NOISE_END="${NOISE_END:-0.01}"
+NOISE_DECAY_EPISODES="${NOISE_DECAY_EPISODES:-3000}"
+EVAL_INTERVAL="${EVAL_INTERVAL:-25}"
+EVAL_EPISODES="${EVAL_EPISODES:-3}"
 PYTHON_MODULE="${PYTHON_MODULE:-python/3.11}"
 EXPECTED_PYTHON="${EXPECTED_PYTHON:-3.11}"
 REQUIRE_GPU="${REQUIRE_GPU:-1}"
@@ -185,6 +187,7 @@ echo "Critic lr: $CRITIC_LR"
 echo "Replay capacity: $BUFFER_CAPACITY"
 echo "Batch size: $BATCH_SIZE"
 echo "Noise start/end/decay: $NOISE_START / $NOISE_END / $NOISE_DECAY_EPISODES"
+echo "Deterministic eval interval/episodes: $EVAL_INTERVAL / $EVAL_EPISODES"
 echo "Seed: $SEED"
 echo "Output dir: $OUTPUT_DIR"
 echo "Require GPU: $REQUIRE_GPU"
@@ -227,6 +230,8 @@ srun python3 train.py \
   --noise-start "$NOISE_START" \
   --noise-end "$NOISE_END" \
   --noise-decay-episodes "$NOISE_DECAY_EPISODES" \
+  --eval-interval "$EVAL_INTERVAL" \
+  --eval-episodes "$EVAL_EPISODES" \
   --require-gpu "$REQUIRE_GPU"
 
 auto_push_artifacts() {

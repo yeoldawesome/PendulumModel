@@ -20,8 +20,10 @@ CRITIC_LR="0.001"
 BUFFER_CAPACITY="200000"
 BATCH_SIZE="128"
 NOISE_START="0.3"
-NOISE_END="0.05"
-NOISE_DECAY_EPISODES="300"
+NOISE_END="0.01"
+NOISE_DECAY_EPISODES="3000"
+EVAL_INTERVAL="25"
+EVAL_EPISODES="3"
 GPUS="1"
 CPUS="6"
 SCRIPT_PATH="scripts/train_hpc.slurm"
@@ -102,6 +104,14 @@ while [[ $# -gt 0 ]]; do
       NOISE_DECAY_EPISODES="$2"
       shift 2
       ;;
+    --eval-interval)
+      EVAL_INTERVAL="$2"
+      shift 2
+      ;;
+    --eval-episodes)
+      EVAL_EPISODES="$2"
+      shift 2
+      ;;
     --gpus)
       GPUS="$2"
       shift 2
@@ -168,8 +178,10 @@ Optional overrides:
   --buffer-capacity Replay buffer capacity (default: 200000)
   --batch-size  Replay sample batch size (default: 128)
   --noise-start Initial exploration noise stddev (default: 0.3)
-  --noise-end   Final exploration noise stddev (default: 0.05)
-  --noise-decay-episodes Episodes to decay exploration noise over (default: 300)
+  --noise-end   Final exploration noise stddev (default: 0.01)
+  --noise-decay-episodes Episodes to decay exploration noise over (default: 3000)
+  --eval-interval Run deterministic eval every N episodes, 0 disables (default: 25)
+  --eval-episodes Number of deterministic eval episodes each eval run (default: 3)
   --gpus        Number of A100 GPUs to request (default: 1)
   --cpus        CPUs per task (default: 6)
   --script      Slurm script path (default: scripts/train_hpc.slurm)
@@ -237,6 +249,8 @@ echo "  batch-size: $BATCH_SIZE"
 echo "  noise-start: $NOISE_START"
 echo "  noise-end: $NOISE_END"
 echo "  noise-decay-episodes: $NOISE_DECAY_EPISODES"
+echo "  eval-interval: $EVAL_INTERVAL"
+echo "  eval-episodes: $EVAL_EPISODES"
 echo "  output: $OUTPUT_DIR"
 echo "  seed: $SEED"
 echo "  gpus: $GPUS"
@@ -263,7 +277,7 @@ submit_output=$(sbatch \
   --cpus-per-task="$CPUS" \
   --mail-user="$EMAIL" \
   --mail-type=BEGIN,END,FAIL \
-  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",LOG_INTERVAL_STEPS="$LOG_INTERVAL_STEPS",ACTOR_LR="$ACTOR_LR",CRITIC_LR="$CRITIC_LR",BUFFER_CAPACITY="$BUFFER_CAPACITY",BATCH_SIZE="$BATCH_SIZE",NOISE_START="$NOISE_START",NOISE_END="$NOISE_END",NOISE_DECAY_EPISODES="$NOISE_DECAY_EPISODES",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
+  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",LOG_INTERVAL_STEPS="$LOG_INTERVAL_STEPS",ACTOR_LR="$ACTOR_LR",CRITIC_LR="$CRITIC_LR",BUFFER_CAPACITY="$BUFFER_CAPACITY",BATCH_SIZE="$BATCH_SIZE",NOISE_START="$NOISE_START",NOISE_END="$NOISE_END",NOISE_DECAY_EPISODES="$NOISE_DECAY_EPISODES",EVAL_INTERVAL="$EVAL_INTERVAL",EVAL_EPISODES="$EVAL_EPISODES",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
   "$SCRIPT_PATH")
 
 echo "$submit_output"
