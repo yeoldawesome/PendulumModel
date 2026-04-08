@@ -1,0 +1,12 @@
+cd /work/classtmp/$USER/TranslationModel
+git pull --ff-only origin main
+
+bash scripts/cancel_all_jobs.sh --force
+
+bash scripts/train_hpc.sh --force
+
+bash scripts/submit_and_watch_hpc.sh
+
+bash scripts/watch_running_job_logs.sh
+
+ssh dnlong5@nova.its.iastate.edu
