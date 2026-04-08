@@ -1,8 +1,8 @@
 {
-  "created_at": "20260408_155745",
+  "created_at": "20260408_161005",
   "env": "InvertedDoublePendulum-v5",
   "seed": 42,
-  "episodes": 100,
+  "episodes": 500,
   "max_steps_per_episode": 2000,
   "num_envs": 1,
   "buffer_capacity": 50000,
@@ -13,10 +13,10 @@
   "critic_lr": 0.002,
   "std_dev": 0.2,
   "visible_gpus": 1,
-  "final_avg_reward_40": 21.29976006370044,
-  "actor_weights": "model_pendulum_20260408_155745_ep100_actor.weights.h5",
-  "critic_weights": "model_pendulum_20260408_155745_ep100_critic.weights.h5",
-  "target_actor_weights": "model_pendulum_20260408_155745_ep100_target_actor.weights.h5",
-  "target_critic_weights": "model_pendulum_20260408_155745_ep100_target_critic.weights.h5",
-  "rewards_file": "model_pendulum_20260408_155745_ep100_rewards.npy"
+  "final_avg_reward_40": 20.45582517337949,
+  "actor_weights": "model_pendulum_20260408_161005_ep500_actor.weights.h5",
+  "critic_weights": "model_pendulum_20260408_161005_ep500_critic.weights.h5",
+  "target_actor_weights": "model_pendulum_20260408_161005_ep500_target_actor.weights.h5",
+  "target_critic_weights": "model_pendulum_20260408_161005_ep500_target_critic.weights.h5",
+  "rewards_file": "model_pendulum_20260408_161005_ep500_rewards.npy"
 }
