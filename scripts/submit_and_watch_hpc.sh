@@ -8,8 +8,8 @@ set -euo pipefail
 EMAIL="dnlong5@iastate.edu"
 ACCOUNT="s2026.se.4390.01"
 PARTITION="instruction"
-EPISODES="100"
-ENV_ID="Pendulum-v1"
+EPISODES="10"
+ENV_ID="InvertedDoublePendulum-v4"
 OUTPUT_DIR="artifacts"
 SEED="42"
 MAX_STEPS_PER_EPISODE="200"
@@ -117,7 +117,7 @@ Optional overrides:
   --account     Slurm account (example: s2026.se.4390.01)
   --partition   Slurm partition (default: instruction)
   --episodes    Number of DDPG training episodes (default: 100)
-  --env-id      Gymnasium environment id (default: Pendulum-v1)
+  --env-id      Gymnasium environment id (default: InvertedDoublePendulum-v4)
   --output-dir  Training output directory (default: artifacts)
   --seed        Training random seed (default: 42)
   --max-steps   Max env steps per episode (default: 200)

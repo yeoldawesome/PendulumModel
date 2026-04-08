@@ -27,7 +27,7 @@ class PendulumViewerApp(tk.Tk):
         self.runner_thread: threading.Thread | None = None
 
         self.model_var = tk.StringVar()
-        self.env_id_var = tk.StringVar(value="Pendulum-v1")
+        self.env_id_var = tk.StringVar(value="InvertedDoublePendulum-v4")
         self.episodes_var = tk.StringVar(value="3")
         self.max_steps_var = tk.StringVar(value="200")
         self.seed_var = tk.StringVar(value="42")
