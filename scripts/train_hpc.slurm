@@ -39,6 +39,8 @@ export TF_CPP_MIN_LOG_LEVEL=2
 EPISODES="${EPISODES:-100}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts}"
 SEED="${SEED:-42}"
+MAX_STEPS_PER_EPISODE="${MAX_STEPS_PER_EPISODE:-200}"
+NUM_ENVS="${NUM_ENVS:-1}"
 PYTHON_MODULE="${PYTHON_MODULE:-python/3.11}"
 EXPECTED_PYTHON="${EXPECTED_PYTHON:-3.11}"
 REQUIRE_GPU="${REQUIRE_GPU:-1}"
@@ -89,6 +91,16 @@ if [[ ! -d "$VENV_DIR" ]]; then
 fi
 source "$VENV_DIR/bin/activate"
 
+CPU_THREADS="${SLURM_CPUS_PER_TASK:-6}"
+export OMP_NUM_THREADS="$CPU_THREADS"
+export TF_NUM_INTRAOP_THREADS="$CPU_THREADS"
+export TF_NUM_INTEROP_THREADS=2
+
+echo "CPU threads: $CPU_THREADS"
+echo "OMP_NUM_THREADS: $OMP_NUM_THREADS"
+echo "TF_NUM_INTRAOP_THREADS: $TF_NUM_INTRAOP_THREADS"
+echo "TF_NUM_INTEROP_THREADS: $TF_NUM_INTEROP_THREADS"
+
 python3 -m pip --no-cache-dir install --upgrade pip
 python3 -m pip --no-cache-dir install -r requirements.txt
 python3 -m pip --no-cache-dir install --upgrade "tensorflow[and-cuda]>=2.16.0"
@@ -137,6 +149,8 @@ echo "Node list: $SLURM_JOB_NODELIST"
 echo "Partition: ${SLURM_JOB_PARTITION:-unknown}"
 echo "Account: ${SLURM_JOB_ACCOUNT:-unknown}"
 echo "Episodes: $EPISODES"
+echo "Max steps/episode: $MAX_STEPS_PER_EPISODE"
+echo "Parallel envs: $NUM_ENVS"
 echo "Seed: $SEED"
 echo "Output dir: $OUTPUT_DIR"
 echo "Require GPU: $REQUIRE_GPU"
@@ -160,10 +174,16 @@ else
 fi
 echo "===================================================="
 
+if [[ -n "${SLURM_GPUS:-}" && "${SLURM_GPUS}" -gt 1 ]]; then
+  echo "Note: This training script is single-process DDPG; requesting >1 GPU usually does not speed it up much."
+fi
+
 srun python3 train.py \
   --episodes "$EPISODES" \
   --output-dir "$OUTPUT_DIR" \
   --seed "$SEED" \
+  --max-steps-per-episode "$MAX_STEPS_PER_EPISODE" \
+  --num-envs "$NUM_ENVS" \
   --require-gpu "$REQUIRE_GPU"
 
 auto_push_artifacts() {

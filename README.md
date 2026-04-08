@@ -68,9 +68,23 @@ Windows PowerShell note:
 
 This wrapper submits:
 
-- `--gres=gpu:a100:1`
-- `--cpus-per-task=6`
-- exported vars: `EPISODES`, `OUTPUT_DIR`, `SEED`
+- `--gres=gpu:a100:<gpus>`
+- `--cpus-per-task=<cpus>`
+- exported vars: `EPISODES`, `OUTPUT_DIR`, `SEED`, `MAX_STEPS_PER_EPISODE`, `NUM_ENVS`
+
+Speed tuning examples:
+
+```bash
+bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100 --max-steps 150 --num-envs 8 --cpus 12 --gpus 1
+```
+
+Optional two-GPU request:
+
+```bash
+bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100 --max-steps 150 --num-envs 8 --cpus 12 --gpus 2
+```
+
+Note: this trainer now supports parallel simulation via `--num-envs`, which usually improves speed more than adding a second GPU for this single-process DDPG setup.
 
 ## Direct Slurm submit (without wrapper)
 
@@ -82,6 +96,12 @@ Optional variable overrides:
 
 ```bash
 EPISODES=150 OUTPUT_DIR=artifacts REQUIRE_GPU=1 sbatch scripts/train_hpc.slurm
+```
+
+Include max steps override in direct submit when needed:
+
+```bash
+EPISODES=150 MAX_STEPS_PER_EPISODE=150 OUTPUT_DIR=artifacts REQUIRE_GPU=1 sbatch scripts/train_hpc.slurm
 ```
 
 Direct Slurm auto-push example:

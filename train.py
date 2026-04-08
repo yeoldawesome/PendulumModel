@@ -68,6 +68,21 @@ class ReplayBuffer:
         self.next_state_buffer[index] = next_state
         self.buffer_counter += 1
 
+    def record_batch(
+        self,
+        states: np.ndarray,
+        actions: np.ndarray,
+        rewards: np.ndarray,
+        next_states: np.ndarray,
+    ) -> None:
+        batch_size = states.shape[0]
+        indices = (np.arange(batch_size) + self.buffer_counter) % self.buffer_capacity
+        self.state_buffer[indices] = states
+        self.action_buffer[indices] = actions
+        self.reward_buffer[indices, 0] = rewards.astype(np.float32)
+        self.next_state_buffer[indices] = next_states
+        self.buffer_counter += batch_size
+
     def can_sample(self) -> bool:
         return min(self.buffer_counter, self.buffer_capacity) >= self.batch_size
 
@@ -119,6 +134,20 @@ def choose_action(state: np.ndarray, noise: OUActionNoise, actor_model: keras.Mo
     return np.array([np.squeeze(legal_action)], dtype=np.float32)
 
 
+def choose_actions_batch(
+    states: np.ndarray,
+    noise: OUActionNoise,
+    actor_model: keras.Model,
+    lower_bound: float,
+    upper_bound: float,
+) -> np.ndarray:
+    state_tensor = tf.convert_to_tensor(states, dtype=tf.float32)
+    sampled_actions = actor_model(state_tensor, training=False).numpy()
+    sampled_actions = sampled_actions + noise()
+    legal_actions = np.clip(sampled_actions, lower_bound, upper_bound)
+    return legal_actions.astype(np.float32)
+
+
 def update_targets(target: keras.Model, source: keras.Model, tau: float) -> None:
     tau_tensor = tf.convert_to_tensor(tau, dtype=tf.float32)
     one_minus_tau = tf.convert_to_tensor(1.0, dtype=tf.float32) - tau_tensor
@@ -134,6 +163,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--render", action="store_true", help="Render environment while training (slower; not for HPC).")
     parser.add_argument("--require-gpu", type=int, default=0, choices=[0, 1], help="Exit with error when no GPU is detected.")
     parser.add_argument("--max-steps-per-episode", type=int, default=200, help="Maximum environment steps per episode.")
+    parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel Pendulum environments for faster simulation.")
     return parser.parse_args()
 
 
@@ -179,28 +209,43 @@ def train_step(
 
 def main() -> None:
     args = parse_args()
+    if args.num_envs < 1:
+        raise ValueError("--num-envs must be >= 1")
+    if args.render and args.num_envs > 1:
+        raise ValueError("--render is only supported with --num-envs=1")
+
     cfg = DDPGConfig(total_episodes=args.episodes, max_steps_per_episode=args.max_steps_per_episode)
 
     set_seed(args.seed)
 
     render_mode = "human" if args.render else None
-    env = gym.make("Pendulum-v1", render_mode=render_mode)
+    if args.num_envs == 1:
+        env = gym.make("Pendulum-v1", render_mode=render_mode)
+        obs_space = env.observation_space
+        action_space = env.action_space
+    else:
+        env_fns = [lambda: gym.make("Pendulum-v1") for _ in range(args.num_envs)]
+        env = gym.vector.AsyncVectorEnv(env_fns)
+        obs_space = env.single_observation_space
+        action_space = env.single_action_space
 
-    num_states = env.observation_space.shape[0]
-    num_actions = env.action_space.shape[0]
-    upper_bound = float(env.action_space.high[0])
-    lower_bound = float(env.action_space.low[0])
+    num_states = obs_space.shape[0]
+    num_actions = action_space.shape[0]
+    upper_bound = float(action_space.high[0])
+    lower_bound = float(action_space.low[0])
 
     print(f"State space: {num_states}")
     print(f"Action space: {num_actions}")
     print(f"Action bounds: [{lower_bound}, {upper_bound}]")
+    print(f"Parallel envs: {args.num_envs}")
 
     gpus = tf.config.list_physical_devices("GPU")
     print(f"Visible GPUs: {len(gpus)}")
     if args.require_gpu == 1 and len(gpus) == 0:
         raise RuntimeError("No GPU detected, and --require-gpu=1 was requested.")
 
-    noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(cfg.std_dev) * np.ones(1))
+    noise_shape = (1,) if args.num_envs == 1 else (args.num_envs, num_actions)
+    noise = OUActionNoise(mean=np.zeros(noise_shape), std_deviation=float(cfg.std_dev) * np.ones(noise_shape))
 
     actor_model = get_actor(num_states=num_states, upper_bound=upper_bound)
     critic_model = get_critic(num_states=num_states, num_actions=num_actions)
@@ -224,23 +269,41 @@ def main() -> None:
     rolling_avg_rewards: list[float] = []
 
     for episode in range(cfg.total_episodes):
-        prev_state, _ = env.reset(seed=args.seed + episode)
+        if args.num_envs == 1:
+            prev_state, _ = env.reset(seed=args.seed + episode)
+        else:
+            seeds = [args.seed + episode * args.num_envs + i for i in range(args.num_envs)]
+            prev_state, _ = env.reset(seed=seeds)
+
         noise.reset()
         episode_reward = 0.0
+        episode_rewards = np.zeros(args.num_envs, dtype=np.float32) if args.num_envs > 1 else None
 
         for _ in range(cfg.max_steps_per_episode):
-            action = choose_action(
-                state=prev_state,
-                noise=noise,
-                actor_model=actor_model,
-                lower_bound=lower_bound,
-                upper_bound=upper_bound,
-            )
+            if args.num_envs == 1:
+                action = choose_action(
+                    state=prev_state,
+                    noise=noise,
+                    actor_model=actor_model,
+                    lower_bound=lower_bound,
+                    upper_bound=upper_bound,
+                )
 
-            state, reward, terminated, truncated, _ = env.step(action)
+                state, reward, terminated, truncated, _ = env.step(action)
+                replay_buffer.record(prev_state, action, float(reward), state)
+                episode_reward += float(reward)
+            else:
+                actions = choose_actions_batch(
+                    states=prev_state,
+                    noise=noise,
+                    actor_model=actor_model,
+                    lower_bound=lower_bound,
+                    upper_bound=upper_bound,
+                )
 
-            replay_buffer.record(prev_state, action, float(reward), state)
-            episode_reward += float(reward)
+                state, reward, terminated, truncated, _ = env.step(actions)
+                replay_buffer.record_batch(prev_state, actions, reward, state)
+                episode_rewards += reward.astype(np.float32)
 
             if replay_buffer.can_sample():
                 state_batch, action_batch, reward_batch, next_state_batch = replay_buffer.sample()
@@ -261,15 +324,21 @@ def main() -> None:
                 update_targets(target_actor, actor_model, cfg.tau)
                 update_targets(target_critic, critic_model, cfg.tau)
 
-            if terminated or truncated:
-                break
+            if args.num_envs == 1:
+                if terminated or truncated:
+                    break
+                prev_state = state
+            else:
+                prev_state = state
 
-            prev_state = state
-
+        if args.num_envs > 1 and episode_rewards is not None:
+            episode_reward = float(np.mean(episode_rewards))
         episodic_rewards.append(episode_reward)
         avg_reward = float(np.mean(episodic_rewards[-40:]))
         rolling_avg_rewards.append(avg_reward)
         print(f"Episode {episode + 1:03d}/{cfg.total_episodes} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f}")
+
+    env.close()
 
     output_dir = pathlib.Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -294,6 +363,7 @@ def main() -> None:
         "seed": args.seed,
         "episodes": cfg.total_episodes,
         "max_steps_per_episode": cfg.max_steps_per_episode,
+        "num_envs": args.num_envs,
         "buffer_capacity": cfg.buffer_capacity,
         "batch_size": cfg.batch_size,
         "gamma": cfg.gamma,

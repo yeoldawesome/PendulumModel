@@ -11,6 +11,10 @@ PARTITION="instruction"
 EPISODES="10"
 OUTPUT_DIR="artifacts"
 SEED="42"
+MAX_STEPS_PER_EPISODE="200"
+NUM_ENVS="1"
+GPUS="1"
+CPUS="6"
 SCRIPT_PATH="scripts/train_hpc.slurm"
 AUTO_PUSH="0"
 PUSH_BRANCH=""
@@ -43,6 +47,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --seed)
       SEED="$2"
+      shift 2
+      ;;
+    --max-steps)
+      MAX_STEPS_PER_EPISODE="$2"
+      shift 2
+      ;;
+    --num-envs)
+      NUM_ENVS="$2"
+      shift 2
+      ;;
+    --gpus)
+      GPUS="$2"
+      shift 2
+      ;;
+    --cpus)
+      CPUS="$2"
       shift 2
       ;;
     --script)
@@ -94,6 +114,10 @@ Optional overrides:
   --episodes    Number of DDPG training episodes (default: 100)
   --output-dir  Training output directory (default: artifacts)
   --seed        Training random seed (default: 42)
+  --max-steps   Max env steps per episode (default: 200)
+  --num-envs    Number of parallel simulation envs (default: 1)
+  --gpus        Number of A100 GPUs to request (default: 1)
+  --cpus        CPUs per task (default: 6)
   --script      Slurm script path (default: scripts/train_hpc.slurm)
   --push        Auto-commit and push artifacts after successful training
   --no-push     Disable auto-push (default)
@@ -122,14 +146,38 @@ if [[ -z "$ACCOUNT" ]]; then
   exit 1
 fi
 
+if ! [[ "$GPUS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Invalid --gpus value: $GPUS (must be a positive integer)." >&2
+  exit 1
+fi
+
+if ! [[ "$CPUS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Invalid --cpus value: $CPUS (must be a positive integer)." >&2
+  exit 1
+fi
+
+if ! [[ "$MAX_STEPS_PER_EPISODE" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Invalid --max-steps value: $MAX_STEPS_PER_EPISODE (must be a positive integer)." >&2
+  exit 1
+fi
+
+if ! [[ "$NUM_ENVS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Invalid --num-envs value: $NUM_ENVS (must be a positive integer)." >&2
+  exit 1
+fi
+
 mkdir -p logs
 
 echo "Submitting DDPG pendulum job..."
 echo "  account: $ACCOUNT"
 echo "  partition: $PARTITION"
 echo "  episodes: $EPISODES"
+echo "  max-steps: $MAX_STEPS_PER_EPISODE"
+echo "  num-envs: $NUM_ENVS"
 echo "  output: $OUTPUT_DIR"
 echo "  seed: $SEED"
+echo "  gpus: $GPUS"
+echo "  cpus: $CPUS"
 echo "  email: $EMAIL"
 echo "  auto-push: $AUTO_PUSH"
 if [[ "$AUTO_PUSH" == "1" ]]; then
@@ -147,12 +195,12 @@ fi
 submit_output=$(sbatch \
   -A "$ACCOUNT" \
   -p "$PARTITION" \
-  --gres="gpu:a100:1" \
+  --gres="gpu:a100:$GPUS" \
   --ntasks=1 \
-  --cpus-per-task=6 \
+  --cpus-per-task="$CPUS" \
   --mail-user="$EMAIL" \
   --mail-type=BEGIN,END,FAIL \
-  --export=ALL,EPISODES="$EPISODES",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
+  --export=ALL,EPISODES="$EPISODES",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
   "$SCRIPT_PATH")
 
 echo "$submit_output"
