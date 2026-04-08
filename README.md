@@ -31,7 +31,7 @@ python viewer_gui.py
 In the GUI:
 
 - Select a `pendulum_actor_*.weights.h5` file from `artifacts/` (or browse to any weights file).
-- Set number of episodes, max steps, and seed.
+- Set number of episodes, max steps, seed, and start episode.
 - Click `Run Loaded Model` to watch your trained policy in the Gym window.
 - Click `Run Random Policy` for a baseline comparison.
 

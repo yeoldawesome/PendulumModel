@@ -30,6 +30,7 @@ class PendulumViewerApp(tk.Tk):
         self.episodes_var = tk.StringVar(value="3")
         self.max_steps_var = tk.StringVar(value="200")
         self.seed_var = tk.StringVar(value="42")
+        self.start_episode_var = tk.StringVar(value="1")
         self.status_var = tk.StringVar(value="Ready")
 
         self._build_ui()
@@ -60,6 +61,9 @@ class PendulumViewerApp(tk.Tk):
 
         ttk.Label(container, text="Seed:").grid(row=3, column=0, sticky="w", pady=(8, 0))
         ttk.Entry(container, textvariable=self.seed_var, width=10).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+
+        ttk.Label(container, text="Start episode:").grid(row=3, column=2, sticky="e", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.start_episode_var, width=10).grid(row=3, column=3, sticky="w", pady=(8, 0))
 
         buttons = ttk.Frame(container)
         buttons.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(16, 8))
@@ -136,10 +140,14 @@ class PendulumViewerApp(tk.Tk):
             episodes = int(self.episodes_var.get())
             max_steps = int(self.max_steps_var.get())
             seed = int(self.seed_var.get())
-            if episodes <= 0 or max_steps <= 0:
+            start_episode = int(self.start_episode_var.get())
+            if episodes <= 0 or max_steps <= 0 or start_episode <= 0:
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Invalid input", "Episodes, max steps, and seed must be valid integers. Episodes/max steps must be > 0.")
+            messagebox.showerror(
+                "Invalid input",
+                "Episodes, max steps, seed, and start episode must be valid integers. Episodes/max steps/start episode must be > 0.",
+            )
             return
 
         self.stop_event.clear()
@@ -152,6 +160,7 @@ class PendulumViewerApp(tk.Tk):
                 "episodes": episodes,
                 "max_steps": max_steps,
                 "seed": seed,
+                "start_episode": start_episode,
                 "model_path": self.model_var.get().strip(),
             },
             daemon=True,
@@ -171,7 +180,15 @@ class PendulumViewerApp(tk.Tk):
         self.results.insert(tk.END, f"Episode {episode_idx:03d} | Reward: {reward:.2f}")
         self.results.see(tk.END)
 
-    def _run_episodes(self, use_model: bool, episodes: int, max_steps: int, seed: int, model_path: str) -> None:
+    def _run_episodes(
+        self,
+        use_model: bool,
+        episodes: int,
+        max_steps: int,
+        seed: int,
+        start_episode: int,
+        model_path: str,
+    ) -> None:
         actor_model = None
         env = None
         try:
@@ -186,13 +203,14 @@ class PendulumViewerApp(tk.Tk):
                 actor_model.load_weights(model_path)
 
             mode_text = "model" if use_model else "random policy"
-            self.after(0, self.status_var.set, f"Running {episodes} episode(s) with {mode_text}...")
+            self.after(0, self.status_var.set, f"Running {episodes} episode(s) with {mode_text} from episode {start_episode}...")
 
-            for episode_idx in range(episodes):
+            for local_idx in range(episodes):
                 if self.stop_event.is_set():
                     break
 
-                state, _ = env.reset(seed=seed + episode_idx)
+                episode_idx = start_episode + local_idx
+                state, _ = env.reset(seed=seed + episode_idx - 1)
                 episode_reward = 0.0
 
                 for _ in range(max_steps):
@@ -211,7 +229,7 @@ class PendulumViewerApp(tk.Tk):
                     if terminated or truncated:
                         break
 
-                self.after(0, self._append_result, episode_idx + 1, episode_reward)
+                self.after(0, self._append_result, episode_idx, episode_reward)
 
             if self.stop_event.is_set():
                 self.after(0, self.status_var.set, "Stopped")

@@ -8,7 +8,7 @@ set -euo pipefail
 EMAIL="dnlong5@iastate.edu"
 ACCOUNT="s2026.se.4390.01"
 PARTITION="instruction"
-EPISODES="10"
+EPISODES="100"
 OUTPUT_DIR="artifacts"
 SEED="42"
 MAX_STEPS_PER_EPISODE="200"
