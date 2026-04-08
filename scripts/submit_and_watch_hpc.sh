@@ -8,7 +8,7 @@ set -euo pipefail
 EMAIL="dnlong5@iastate.edu"
 ACCOUNT="s2026.se.4390.01"
 PARTITION="instruction"
-EPISODES="4000"
+EPISODES="1000"
 ENV_ID="InvertedDoublePendulum-v5"
 OUTPUT_DIR="artifacts"
 SEED="42"
