@@ -18,13 +18,15 @@ from keras import layers
 @dataclass
 class DDPGConfig:
     total_episodes: int = 500
-    std_dev: float = 0.2
-    critic_lr: float = 0.002
-    actor_lr: float = 0.001
+    std_dev_start: float = 0.3
+    std_dev_end: float = 0.05
+    std_dev_decay_episodes: int = 300
+    critic_lr: float = 0.001
+    actor_lr: float = 0.0003
     gamma: float = 0.99
-    tau: float = 0.005
-    buffer_capacity: int = 50000
-    batch_size: int = 64
+    tau: float = 0.002
+    buffer_capacity: int = 200000
+    batch_size: int = 128
     max_steps_per_episode: int = 2000
 
 
@@ -164,6 +166,13 @@ def update_targets(target: keras.Model, source: keras.Model, tau: float) -> None
         target_var.assign(source_var * tau_tensor + target_var * one_minus_tau)
 
 
+def linear_decay(step: int, start: float, end: float, decay_steps: int) -> float:
+    if decay_steps <= 0:
+        return end
+    alpha = min(max(step / decay_steps, 0.0), 1.0)
+    return (1.0 - alpha) * start + alpha * end
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train DDPG on a continuous-control Gymnasium environment with Keras.")
     parser.add_argument("--episodes", type=int, default=500, help="Number of training episodes.")
@@ -175,6 +184,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-steps-per-episode", type=int, default=2000, help="Maximum environment steps per episode.")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environment instances for faster simulation.")
     parser.add_argument("--log-interval-steps", type=int, default=100, help="Print in-episode progress every N steps.")
+    parser.add_argument("--actor-lr", type=float, default=0.0003, help="Actor learning rate.")
+    parser.add_argument("--critic-lr", type=float, default=0.001, help="Critic learning rate.")
+    parser.add_argument("--tau", type=float, default=0.002, help="Target network update factor.")
+    parser.add_argument("--buffer-capacity", type=int, default=200000, help="Replay buffer capacity.")
+    parser.add_argument("--batch-size", type=int, default=128, help="Batch size for replay sampling.")
+    parser.add_argument("--noise-start", type=float, default=0.3, help="Initial exploration noise stddev.")
+    parser.add_argument("--noise-end", type=float, default=0.05, help="Final exploration noise stddev.")
+    parser.add_argument("--noise-decay-episodes", type=int, default=300, help="Episodes over which exploration noise decays.")
     return parser.parse_args()
 
 
@@ -224,11 +241,25 @@ def main() -> None:
         raise ValueError("--num-envs must be >= 1")
     if args.log_interval_steps < 1:
         raise ValueError("--log-interval-steps must be >= 1")
+    if args.batch_size < 1:
+        raise ValueError("--batch-size must be >= 1")
+    if args.buffer_capacity < args.batch_size:
+        raise ValueError("--buffer-capacity must be >= --batch-size")
+    if args.noise_start < 0 or args.noise_end < 0:
+        raise ValueError("--noise-start and --noise-end must be >= 0")
     if args.render and args.num_envs > 1:
         raise ValueError("--render is only supported with --num-envs=1")
 
     cfg = DDPGConfig(
         total_episodes=args.episodes,
+        actor_lr=args.actor_lr,
+        critic_lr=args.critic_lr,
+        tau=args.tau,
+        buffer_capacity=args.buffer_capacity,
+        batch_size=args.batch_size,
+        std_dev_start=args.noise_start,
+        std_dev_end=args.noise_end,
+        std_dev_decay_episodes=args.noise_decay_episodes,
         max_steps_per_episode=args.max_steps_per_episode,
     )
 
@@ -261,6 +292,11 @@ def main() -> None:
     print(f"Action bounds: low={lower_bound} high={upper_bound}")
     print(f"Parallel envs: {args.num_envs}")
     print(f"Log interval steps: {args.log_interval_steps}")
+    print(f"Actor lr: {cfg.actor_lr}")
+    print(f"Critic lr: {cfg.critic_lr}")
+    print(f"Replay capacity: {cfg.buffer_capacity}")
+    print(f"Batch size: {cfg.batch_size}")
+    print(f"Exploration noise: start={cfg.std_dev_start:.3f} end={cfg.std_dev_end:.3f} decay_episodes={cfg.std_dev_decay_episodes}")
     if args.env_id.startswith("InvertedDoublePendulum") and args.episodes < 200:
         print("Warning: InvertedDoublePendulum usually needs many more than 200 episodes for clear learning progress.", flush=True)
 
@@ -270,7 +306,7 @@ def main() -> None:
         raise RuntimeError("No GPU detected, and --require-gpu=1 was requested.")
 
     noise_shape = (1,) if args.num_envs == 1 else (args.num_envs, num_actions)
-    noise = OUActionNoise(mean=np.zeros(noise_shape), std_deviation=float(cfg.std_dev) * np.ones(noise_shape))
+    noise = OUActionNoise(mean=np.zeros(noise_shape), std_deviation=float(cfg.std_dev_start) * np.ones(noise_shape, dtype=np.float32))
 
     actor_model = get_actor(num_states=num_states, num_actions=num_actions, upper_bound=upper_bound)
     critic_model = get_critic(num_states=num_states, num_actions=num_actions)
@@ -292,8 +328,14 @@ def main() -> None:
 
     episodic_rewards: list[float] = []
     rolling_avg_rewards: list[float] = []
+    episode_lengths: list[int] = []
+    best_avg_reward = float("-inf")
+    best_episode = -1
+    best_actor_weights = None
     for episode in range(cfg.total_episodes):
         print(f"Episode {episode + 1:03d}/{cfg.total_episodes} started", flush=True)
+        episode_noise = linear_decay(episode, cfg.std_dev_start, cfg.std_dev_end, cfg.std_dev_decay_episodes)
+        noise.std_dev = episode_noise * np.ones(noise_shape, dtype=np.float32)
         if args.num_envs == 1:
             prev_state, _ = env.reset(seed=args.seed + episode)
         else:
@@ -302,9 +344,11 @@ def main() -> None:
 
         noise.reset()
         episode_reward = 0.0
+        episode_steps = 0
         episode_rewards = np.zeros(args.num_envs, dtype=np.float32) if args.num_envs > 1 else None
 
         for step_idx in range(cfg.max_steps_per_episode):
+            episode_steps = step_idx + 1
             if args.num_envs == 1:
                 action = choose_action(
                     state=prev_state,
@@ -369,9 +413,17 @@ def main() -> None:
         if args.num_envs > 1 and episode_rewards is not None:
             episode_reward = float(np.mean(episode_rewards))
         episodic_rewards.append(episode_reward)
+        episode_lengths.append(episode_steps)
         avg_reward = float(np.mean(episodic_rewards[-40:]))
         rolling_avg_rewards.append(avg_reward)
-        print(f"Episode {episode + 1:03d}/{cfg.total_episodes} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f}", flush=True)
+        if avg_reward > best_avg_reward:
+            best_avg_reward = avg_reward
+            best_episode = episode + 1
+            best_actor_weights = actor_model.get_weights()
+        print(
+            f"Episode {episode + 1:03d}/{cfg.total_episodes} | Steps: {episode_steps:04d} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
+            flush=True,
+        )
 
     env.close()
 
@@ -386,12 +438,20 @@ def main() -> None:
     target_actor_path = output_dir / f"{artifact_prefix}_target_actor.weights.h5"
     target_critic_path = output_dir / f"{artifact_prefix}_target_critic.weights.h5"
     rewards_path = output_dir / f"{artifact_prefix}_rewards.npy"
+    episode_lengths_path = output_dir / f"{artifact_prefix}_episode_lengths.npy"
+    best_actor_path = output_dir / f"{artifact_prefix}_best_actor.weights.h5"
 
     actor_model.save_weights(actor_path)
     critic_model.save_weights(critic_path)
     target_actor.save_weights(target_actor_path)
     target_critic.save_weights(target_critic_path)
     np.save(rewards_path, np.array(rolling_avg_rewards, dtype=np.float32))
+    np.save(episode_lengths_path, np.array(episode_lengths, dtype=np.int32))
+
+    if best_actor_weights is not None:
+        best_actor_model = get_actor(num_states=num_states, num_actions=num_actions, upper_bound=upper_bound)
+        best_actor_model.set_weights(best_actor_weights)
+        best_actor_model.save_weights(best_actor_path)
 
     metadata = {
         "created_at": run_stamp,
@@ -402,11 +462,15 @@ def main() -> None:
         "num_envs": args.num_envs,
         "buffer_capacity": cfg.buffer_capacity,
         "batch_size": cfg.batch_size,
+        "noise_start": cfg.std_dev_start,
+        "noise_end": cfg.std_dev_end,
+        "noise_decay_episodes": cfg.std_dev_decay_episodes,
         "gamma": cfg.gamma,
         "tau": cfg.tau,
         "actor_lr": cfg.actor_lr,
         "critic_lr": cfg.critic_lr,
-        "std_dev": cfg.std_dev,
+        "best_avg_reward_40": best_avg_reward if best_avg_reward > float("-inf") else None,
+        "best_episode": best_episode if best_episode > 0 else None,
         "visible_gpus": len(gpus),
         "final_avg_reward_40": rolling_avg_rewards[-1] if rolling_avg_rewards else None,
         "actor_weights": actor_path.name,
@@ -414,6 +478,8 @@ def main() -> None:
         "target_actor_weights": target_actor_path.name,
         "target_critic_weights": target_critic_path.name,
         "rewards_file": rewards_path.name,
+        "episode_lengths_file": episode_lengths_path.name,
+        "best_actor_weights": best_actor_path.name if best_actor_weights is not None else None,
     }
 
     metadata_path = output_dir / "metadata.json"

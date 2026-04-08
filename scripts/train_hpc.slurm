@@ -42,6 +42,14 @@ OUTPUT_DIR="${OUTPUT_DIR:-artifacts}"
 SEED="${SEED:-42}"
 MAX_STEPS_PER_EPISODE="${MAX_STEPS_PER_EPISODE:-2000}"
 NUM_ENVS="${NUM_ENVS:-1}"
+LOG_INTERVAL_STEPS="${LOG_INTERVAL_STEPS:-100}"
+ACTOR_LR="${ACTOR_LR:-0.0003}"
+CRITIC_LR="${CRITIC_LR:-0.001}"
+BUFFER_CAPACITY="${BUFFER_CAPACITY:-200000}"
+BATCH_SIZE="${BATCH_SIZE:-128}"
+NOISE_START="${NOISE_START:-0.3}"
+NOISE_END="${NOISE_END:-0.05}"
+NOISE_DECAY_EPISODES="${NOISE_DECAY_EPISODES:-300}"
 PYTHON_MODULE="${PYTHON_MODULE:-python/3.11}"
 EXPECTED_PYTHON="${EXPECTED_PYTHON:-3.11}"
 REQUIRE_GPU="${REQUIRE_GPU:-1}"
@@ -171,6 +179,12 @@ echo "Episodes: $EPISODES"
 echo "Env id: $ENV_ID"
 echo "Max steps/episode: $MAX_STEPS_PER_EPISODE"
 echo "Parallel envs: $NUM_ENVS"
+echo "Log interval steps: $LOG_INTERVAL_STEPS"
+echo "Actor lr: $ACTOR_LR"
+echo "Critic lr: $CRITIC_LR"
+echo "Replay capacity: $BUFFER_CAPACITY"
+echo "Batch size: $BATCH_SIZE"
+echo "Noise start/end/decay: $NOISE_START / $NOISE_END / $NOISE_DECAY_EPISODES"
 echo "Seed: $SEED"
 echo "Output dir: $OUTPUT_DIR"
 echo "Require GPU: $REQUIRE_GPU"
@@ -205,6 +219,14 @@ srun python3 train.py \
   --seed "$SEED" \
   --max-steps-per-episode "$MAX_STEPS_PER_EPISODE" \
   --num-envs "$NUM_ENVS" \
+  --log-interval-steps "$LOG_INTERVAL_STEPS" \
+  --actor-lr "$ACTOR_LR" \
+  --critic-lr "$CRITIC_LR" \
+  --buffer-capacity "$BUFFER_CAPACITY" \
+  --batch-size "$BATCH_SIZE" \
+  --noise-start "$NOISE_START" \
+  --noise-end "$NOISE_END" \
+  --noise-decay-episodes "$NOISE_DECAY_EPISODES" \
   --require-gpu "$REQUIRE_GPU"
 
 auto_push_artifacts() {
