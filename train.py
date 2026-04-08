@@ -102,13 +102,13 @@ class ReplayBuffer:
         return state_batch, action_batch, reward_batch, next_state_batch
 
 
-def get_actor(num_states: int, upper_bound: float) -> keras.Model:
+def get_actor(num_states: int, num_actions: int, upper_bound: np.ndarray) -> keras.Model:
     last_init = keras.initializers.RandomUniform(minval=-0.003, maxval=0.003)
 
     inputs = layers.Input(shape=(num_states,))
     x = layers.Dense(256, activation="relu")(inputs)
     x = layers.Dense(256, activation="relu")(x)
-    outputs = layers.Dense(1, activation="tanh", kernel_initializer=last_init)(x)
+    outputs = layers.Dense(num_actions, activation="tanh", kernel_initializer=last_init)(x)
     outputs = outputs * upper_bound
 
     return keras.Model(inputs, outputs)
@@ -131,20 +131,26 @@ def get_critic(num_states: int, num_actions: int) -> keras.Model:
     return keras.Model([state_input, action_input], outputs)
 
 
-def choose_action(state: np.ndarray, noise: OUActionNoise, actor_model: keras.Model, lower_bound: float, upper_bound: float) -> np.ndarray:
+def choose_action(
+    state: np.ndarray,
+    noise: OUActionNoise,
+    actor_model: keras.Model,
+    lower_bound: np.ndarray,
+    upper_bound: np.ndarray,
+) -> np.ndarray:
     state_tensor = tf.expand_dims(tf.convert_to_tensor(state), 0)
-    sampled_actions = tf.squeeze(actor_model(state_tensor)).numpy()
+    sampled_actions = tf.squeeze(actor_model(state_tensor), axis=0).numpy()
     sampled_actions = sampled_actions + noise()
     legal_action = np.clip(sampled_actions, lower_bound, upper_bound)
-    return np.array([np.squeeze(legal_action)], dtype=np.float32)
+    return np.asarray(legal_action, dtype=np.float32)
 
 
 def choose_actions_batch(
     states: np.ndarray,
     noise: OUActionNoise,
     actor_model: keras.Model,
-    lower_bound: float,
-    upper_bound: float,
+    lower_bound: np.ndarray,
+    upper_bound: np.ndarray,
 ) -> np.ndarray:
     state_tensor = tf.convert_to_tensor(states, dtype=tf.float32)
     sampled_actions = actor_model(state_tensor, training=False).numpy()
@@ -161,14 +167,15 @@ def update_targets(target: keras.Model, source: keras.Model, tau: float) -> None
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train DDPG on Pendulum-v1 with Keras.")
+    parser = argparse.ArgumentParser(description="Train DDPG on a continuous-control Gymnasium environment with Keras.")
     parser.add_argument("--episodes", type=int, default=100, help="Number of training episodes.")
+    parser.add_argument("--env-id", type=str, default="Pendulum-v1", help="Gymnasium environment id (for example Pendulum-v1 or InvertedDoublePendulum-v4).")
     parser.add_argument("--output-dir", type=str, default="artifacts", help="Output directory for model files and metadata.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--render", action="store_true", help="Render environment while training (slower; not for HPC).")
     parser.add_argument("--require-gpu", type=int, default=0, choices=[0, 1], help="Exit with error when no GPU is detected.")
     parser.add_argument("--max-steps-per-episode", type=int, default=200, help="Maximum environment steps per episode.")
-    parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel Pendulum environments for faster simulation.")
+    parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environment instances for faster simulation.")
     parser.add_argument("--batch-size", type=int, default=1024, help="Replay buffer sample batch size for each gradient update.")
     parser.add_argument("--updates-per-step", type=int, default=4, help="Number of gradient updates to run after each env step.")
     parser.add_argument("--warmup-steps", type=int, default=4096, help="Minimum replay entries before training starts.")
@@ -244,23 +251,29 @@ def main() -> None:
 
     render_mode = "human" if args.render else None
     if args.num_envs == 1:
-        env = gym.make("Pendulum-v1", render_mode=render_mode)
+        env = gym.make(args.env_id, render_mode=render_mode)
         obs_space = env.observation_space
         action_space = env.action_space
     else:
-        env_fns = [lambda: gym.make("Pendulum-v1") for _ in range(args.num_envs)]
+        env_fns = [lambda env_id=args.env_id: gym.make(env_id) for _ in range(args.num_envs)]
         env = gym.vector.AsyncVectorEnv(env_fns)
         obs_space = env.single_observation_space
         action_space = env.single_action_space
 
+    if not isinstance(action_space, gym.spaces.Box):
+        raise ValueError(f"Environment {args.env_id} must use a continuous Box action space.")
+    if not isinstance(obs_space, gym.spaces.Box):
+        raise ValueError(f"Environment {args.env_id} must use a Box observation space.")
+
     num_states = obs_space.shape[0]
     num_actions = action_space.shape[0]
-    upper_bound = float(action_space.high[0])
-    lower_bound = float(action_space.low[0])
+    upper_bound = action_space.high.astype(np.float32)
+    lower_bound = action_space.low.astype(np.float32)
 
     print(f"State space: {num_states}")
     print(f"Action space: {num_actions}")
-    print(f"Action bounds: [{lower_bound}, {upper_bound}]")
+    print(f"Environment: {args.env_id}")
+    print(f"Action bounds: low={lower_bound} high={upper_bound}")
     print(f"Parallel envs: {args.num_envs}")
     print(f"Batch size: {cfg.batch_size}")
     print(f"Updates per step: {cfg.updates_per_step}")
@@ -281,10 +294,10 @@ def main() -> None:
     noise_shape = (1,) if args.num_envs == 1 else (args.num_envs, num_actions)
     noise = OUActionNoise(mean=np.zeros(noise_shape), std_deviation=float(cfg.std_dev) * np.ones(noise_shape))
 
-    actor_model = get_actor(num_states=num_states, upper_bound=upper_bound)
+    actor_model = get_actor(num_states=num_states, num_actions=num_actions, upper_bound=upper_bound)
     critic_model = get_critic(num_states=num_states, num_actions=num_actions)
 
-    target_actor = get_actor(num_states=num_states, upper_bound=upper_bound)
+    target_actor = get_actor(num_states=num_states, num_actions=num_actions, upper_bound=upper_bound)
     target_critic = get_critic(num_states=num_states, num_actions=num_actions)
     target_actor.set_weights(actor_model.get_weights())
     target_critic.set_weights(critic_model.get_weights())
@@ -395,7 +408,7 @@ def main() -> None:
 
     metadata = {
         "created_at": run_stamp,
-        "env": "Pendulum-v1",
+    "env": args.env_id,
         "seed": args.seed,
         "episodes": cfg.total_episodes,
         "max_steps_per_episode": cfg.max_steps_per_episode,

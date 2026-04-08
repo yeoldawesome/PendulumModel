@@ -1,10 +1,10 @@
-# DDPG Pendulum (Keras) with ISU Nova HPC Workflow
+# DDPG Continuous Control (Keras) with ISU Nova HPC Workflow
 
 This project runs the Keras DDPG Pendulum example on Iowa State Nova HPC using the same Slurm + GPU pattern from your Assignment3 setup.
 
 ## Files
 
-- `train.py`: DDPG training script for `Pendulum-v1`.
+- `train.py`: DDPG training script for continuous-control Gymnasium tasks (for example `Pendulum-v1` or `InvertedDoublePendulum-v4`).
 - `requirements.txt`: Python dependencies.
 - `scripts/train_hpc.slurm`: main Nova Slurm job script.
 - `scripts/submit_and_watch_hpc.sh`: one-command submit + live log tail.
@@ -17,7 +17,10 @@ This project runs the Keras DDPG Pendulum example on Iowa State Nova HPC using t
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python train.py --episodes 5 --output-dir artifacts
+python train.py --episodes 5 --env-id Pendulum-v1 --output-dir artifacts
+
+# Double pendulum balancing (MuJoCo)
+python train.py --episodes 5 --env-id InvertedDoublePendulum-v4 --output-dir artifacts
 ```
 
 ## View Pendulum Episodes with a GUI
@@ -32,6 +35,7 @@ In the GUI:
 
 - Select a `pendulum_actor_*.weights.h5` file from `artifacts/` (or browse to any weights file).
 - Set number of episodes, max steps, seed, and start episode.
+- Select the environment id in the viewer (`Pendulum-v1` or `InvertedDoublePendulum-v4`) before running.
 - Click `Run Loaded Model` to watch your trained policy in the Gym window.
 - Click `Run Random Policy` for a baseline comparison.
 
@@ -45,6 +49,9 @@ In the GUI:
 
 ```bash
 bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100
+
+# Double pendulum balancing on HPC
+bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100 --env-id InvertedDoublePendulum-v4
 ```
 
 To auto-commit and push trained artifacts to your branch after training finishes:

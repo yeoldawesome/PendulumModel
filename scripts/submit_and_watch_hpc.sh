@@ -9,6 +9,7 @@ EMAIL="dnlong5@iastate.edu"
 ACCOUNT="s2026.se.4390.01"
 PARTITION="instruction"
 EPISODES="1"
+ENV_ID="Pendulum-v1"
 OUTPUT_DIR="artifacts"
 SEED="42"
 MAX_STEPS_PER_EPISODE="200"
@@ -45,6 +46,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --episodes)
       EPISODES="$2"
+      shift 2
+      ;;
+    --env-id)
+      ENV_ID="$2"
       shift 2
       ;;
     --output-dir)
@@ -139,6 +144,7 @@ Optional overrides:
   --account     Slurm account (example: s2026.se.4390.01)
   --partition   Slurm partition (default: instruction)
   --episodes    Number of DDPG training episodes (default: 100)
+  --env-id      Gymnasium environment id (default: Pendulum-v1)
   --output-dir  Training output directory (default: artifacts)
   --seed        Training random seed (default: 42)
   --max-steps   Max env steps per episode (default: 200)
@@ -236,6 +242,7 @@ echo "Submitting DDPG pendulum job..."
 echo "  account: $ACCOUNT"
 echo "  partition: $PARTITION"
 echo "  episodes: $EPISODES"
+echo "  env-id: $ENV_ID"
 echo "  max-steps: $MAX_STEPS_PER_EPISODE"
 echo "  num-envs: $NUM_ENVS"
 echo "  batch-size: $BATCH_SIZE"
@@ -269,7 +276,7 @@ submit_output=$(sbatch \
   --cpus-per-task="$CPUS" \
   --mail-user="$EMAIL" \
   --mail-type=BEGIN,END,FAIL \
-  --export=ALL,EPISODES="$EPISODES",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",BATCH_SIZE="$BATCH_SIZE",UPDATES_PER_STEP="$UPDATES_PER_STEP",WARMUP_STEPS="$WARMUP_STEPS",MIXED_PRECISION="$MIXED_PRECISION",XLA="$XLA",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
+  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",BATCH_SIZE="$BATCH_SIZE",UPDATES_PER_STEP="$UPDATES_PER_STEP",WARMUP_STEPS="$WARMUP_STEPS",MIXED_PRECISION="$MIXED_PRECISION",XLA="$XLA",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
   "$SCRIPT_PATH")
 
 echo "$submit_output"

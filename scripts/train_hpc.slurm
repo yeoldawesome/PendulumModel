@@ -37,6 +37,7 @@ export PYTHONUNBUFFERED=1
 export TF_CPP_MIN_LOG_LEVEL=2
 
 EPISODES="${EPISODES:-100}"
+ENV_ID="${ENV_ID:-Pendulum-v1}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts}"
 SEED="${SEED:-42}"
 MAX_STEPS_PER_EPISODE="${MAX_STEPS_PER_EPISODE:-200}"
@@ -173,6 +174,7 @@ echo "Node list: $SLURM_JOB_NODELIST"
 echo "Partition: ${SLURM_JOB_PARTITION:-unknown}"
 echo "Account: ${SLURM_JOB_ACCOUNT:-unknown}"
 echo "Episodes: $EPISODES"
+echo "Env id: $ENV_ID"
 echo "Max steps/episode: $MAX_STEPS_PER_EPISODE"
 echo "Parallel envs: $NUM_ENVS"
 echo "Batch size: $BATCH_SIZE"
@@ -215,6 +217,7 @@ fi
 
 srun python3 train.py \
   --episodes "$EPISODES" \
+  --env-id "$ENV_ID" \
   --output-dir "$OUTPUT_DIR" \
   --seed "$SEED" \
   --max-steps-per-episode "$MAX_STEPS_PER_EPISODE" \

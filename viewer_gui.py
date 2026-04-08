@@ -20,13 +20,14 @@ tf.get_logger().setLevel("ERROR")
 class PendulumViewerApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Pendulum Model Viewer")
+        self.title("Control Model Viewer")
         self.geometry("760x520")
 
         self.stop_event = threading.Event()
         self.runner_thread: threading.Thread | None = None
 
         self.model_var = tk.StringVar()
+        self.env_id_var = tk.StringVar(value="Pendulum-v1")
         self.episodes_var = tk.StringVar(value="3")
         self.max_steps_var = tk.StringVar(value="200")
         self.seed_var = tk.StringVar(value="42")
@@ -40,33 +41,42 @@ class PendulumViewerApp(tk.Tk):
         container = ttk.Frame(self, padding=12)
         container.pack(fill=tk.BOTH, expand=True)
 
-        title = ttk.Label(container, text="DDPG Pendulum Episode Viewer", font=("Segoe UI", 14, "bold"))
+        title = ttk.Label(container, text="DDPG Episode Viewer", font=("Segoe UI", 14, "bold"))
         title.grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
 
-        ttk.Label(container, text="Actor model weights:").grid(row=1, column=0, sticky="w")
+        ttk.Label(container, text="Environment id:").grid(row=1, column=0, sticky="w")
+        env_combo = ttk.Combobox(
+            container,
+            textvariable=self.env_id_var,
+            width=40,
+            values=("Pendulum-v1", "InvertedDoublePendulum-v4"),
+        )
+        env_combo.grid(row=1, column=1, columnspan=2, sticky="w", padx=(8, 8))
+
+        ttk.Label(container, text="Actor model weights:").grid(row=2, column=0, sticky="w")
         self.model_combo = ttk.Combobox(container, textvariable=self.model_var, width=70, state="readonly")
-        self.model_combo.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 8))
+        self.model_combo.grid(row=2, column=1, columnspan=2, sticky="ew", padx=(8, 8))
 
         browse_btn = ttk.Button(container, text="Browse...", command=self.browse_model)
-        browse_btn.grid(row=1, column=3, sticky="ew")
+        browse_btn.grid(row=2, column=3, sticky="ew")
 
         refresh_btn = ttk.Button(container, text="Refresh Artifacts", command=self.refresh_models)
-        refresh_btn.grid(row=2, column=3, sticky="ew", pady=(8, 0))
+        refresh_btn.grid(row=3, column=3, sticky="ew", pady=(8, 0))
 
-        ttk.Label(container, text="Episodes:").grid(row=2, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(container, textvariable=self.episodes_var, width=10).grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        ttk.Label(container, text="Episodes:").grid(row=3, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.episodes_var, width=10).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(container, text="Max steps:").grid(row=2, column=1, sticky="e", pady=(8, 0))
-        ttk.Entry(container, textvariable=self.max_steps_var, width=10).grid(row=2, column=2, sticky="w", pady=(8, 0))
+        ttk.Label(container, text="Max steps:").grid(row=3, column=1, sticky="e", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.max_steps_var, width=10).grid(row=3, column=2, sticky="w", pady=(8, 0))
 
-        ttk.Label(container, text="Seed:").grid(row=3, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(container, textvariable=self.seed_var, width=10).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        ttk.Label(container, text="Seed:").grid(row=4, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.seed_var, width=10).grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(container, text="Start episode:").grid(row=3, column=2, sticky="e", pady=(8, 0))
-        ttk.Entry(container, textvariable=self.start_episode_var, width=10).grid(row=3, column=3, sticky="w", pady=(8, 0))
+        ttk.Label(container, text="Start episode:").grid(row=4, column=2, sticky="e", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.start_episode_var, width=10).grid(row=4, column=3, sticky="w", pady=(8, 0))
 
         buttons = ttk.Frame(container)
-        buttons.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(16, 8))
+        buttons.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(16, 8))
         buttons.columnconfigure((0, 1, 2), weight=1)
 
         self.run_model_btn = ttk.Button(buttons, text="Run Loaded Model", command=self.run_loaded_model)
@@ -78,17 +88,17 @@ class PendulumViewerApp(tk.Tk):
         self.stop_btn = ttk.Button(buttons, text="Stop", command=self.stop_run, state=tk.DISABLED)
         self.stop_btn.grid(row=0, column=2, sticky="ew")
 
-        ttk.Label(container, text="Episode rewards:").grid(row=5, column=0, columnspan=4, sticky="w")
+        ttk.Label(container, text="Episode rewards:").grid(row=6, column=0, columnspan=4, sticky="w")
 
         self.results = tk.Listbox(container, height=12)
-        self.results.grid(row=6, column=0, columnspan=4, sticky="nsew", pady=(6, 8))
+        self.results.grid(row=7, column=0, columnspan=4, sticky="nsew", pady=(6, 8))
 
         status = ttk.Label(container, textvariable=self.status_var)
-        status.grid(row=7, column=0, columnspan=4, sticky="w")
+        status.grid(row=8, column=0, columnspan=4, sticky="w")
 
         container.columnconfigure(1, weight=1)
         container.columnconfigure(2, weight=1)
-        container.rowconfigure(6, weight=1)
+        container.rowconfigure(7, weight=1)
 
     def refresh_models(self) -> None:
         artifacts_dir = pathlib.Path("artifacts")
@@ -162,6 +172,7 @@ class PendulumViewerApp(tk.Tk):
                 "seed": seed,
                 "start_episode": start_episode,
                 "model_path": self.model_var.get().strip(),
+                "env_id": self.env_id_var.get().strip(),
             },
             daemon=True,
         )
@@ -188,16 +199,21 @@ class PendulumViewerApp(tk.Tk):
         seed: int,
         start_episode: int,
         model_path: str,
+        env_id: str,
     ) -> None:
         actor_model = None
         env = None
         try:
-            env = gym.make("Pendulum-v1", render_mode="human")
+            env = gym.make(env_id, render_mode="human")
+            if not isinstance(env.action_space, gym.spaces.Box):
+                raise ValueError(f"{env_id} must have continuous Box actions for this viewer.")
             num_states = env.observation_space.shape[0]
-            upper_bound = float(env.action_space.high[0])
+            num_actions = env.action_space.shape[0]
+            upper_bound = env.action_space.high.astype(np.float32)
+            lower_bound = env.action_space.low.astype(np.float32)
 
             if use_model:
-                actor_model = get_actor(num_states=num_states, upper_bound=upper_bound)
+                actor_model = get_actor(num_states=num_states, num_actions=num_actions, upper_bound=upper_bound)
                 # Build model variables before loading weights.
                 actor_model(np.zeros((1, num_states), dtype=np.float32), training=False)
                 actor_model.load_weights(model_path)
@@ -219,8 +235,8 @@ class PendulumViewerApp(tk.Tk):
 
                     if actor_model is not None:
                         state_tensor = tf.convert_to_tensor(state[np.newaxis, :], dtype=tf.float32)
-                        action_value = tf.squeeze(actor_model(state_tensor, training=False)).numpy()
-                        action = np.array([np.squeeze(action_value)], dtype=np.float32)
+                        action_value = tf.squeeze(actor_model(state_tensor, training=False), axis=0).numpy()
+                        action = np.clip(action_value, lower_bound, upper_bound).astype(np.float32)
                     else:
                         action = env.action_space.sample().astype(np.float32)
 
