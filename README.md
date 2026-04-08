@@ -47,6 +47,18 @@ In the GUI:
 bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100
 ```
 
+To auto-commit and push trained artifacts to your branch after training finishes:
+
+```bash
+bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100 --push --branch your-branch-name
+```
+
+Optional push controls:
+
+- `--remote origin` (default remote)
+- `--strict-push` (fail the Slurm job if git push fails)
+- `--git-user-name "Your Name" --git-user-email "you@iastate.edu"` if HPC git identity is not configured
+
 Windows PowerShell note:
 
 - Use the full local path when changing directories, for example:
@@ -70,6 +82,12 @@ Optional variable overrides:
 
 ```bash
 EPISODES=150 OUTPUT_DIR=artifacts REQUIRE_GPU=1 sbatch scripts/train_hpc.slurm
+```
+
+Direct Slurm auto-push example:
+
+```bash
+EPISODES=150 OUTPUT_DIR=artifacts AUTO_PUSH=1 PUSH_BRANCH=your-branch-name PUSH_REMOTE=origin STRICT_PUSH=1 sbatch scripts/train_hpc.slurm
 ```
 
 ## Monitor and control jobs

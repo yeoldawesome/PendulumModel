@@ -12,6 +12,12 @@ EPISODES="100"
 OUTPUT_DIR="artifacts"
 SEED="42"
 SCRIPT_PATH="scripts/train_hpc.slurm"
+AUTO_PUSH="0"
+PUSH_BRANCH=""
+PUSH_REMOTE="origin"
+STRICT_PUSH="0"
+GIT_USER_NAME=""
+GIT_USER_EMAIL=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -43,6 +49,34 @@ while [[ $# -gt 0 ]]; do
       SCRIPT_PATH="$2"
       shift 2
       ;;
+    --push)
+      AUTO_PUSH="1"
+      shift
+      ;;
+    --no-push)
+      AUTO_PUSH="0"
+      shift
+      ;;
+    --branch)
+      PUSH_BRANCH="$2"
+      shift 2
+      ;;
+    --remote)
+      PUSH_REMOTE="$2"
+      shift 2
+      ;;
+    --strict-push)
+      STRICT_PUSH="1"
+      shift
+      ;;
+    --git-user-name)
+      GIT_USER_NAME="$2"
+      shift 2
+      ;;
+    --git-user-email)
+      GIT_USER_EMAIL="$2"
+      shift 2
+      ;;
     -h|--help)
       cat <<EOF
 Usage: $0 [options]
@@ -61,6 +95,13 @@ Optional overrides:
   --output-dir  Training output directory (default: artifacts)
   --seed        Training random seed (default: 42)
   --script      Slurm script path (default: scripts/train_hpc.slurm)
+  --push        Auto-commit and push artifacts after successful training
+  --no-push     Disable auto-push (default)
+  --branch      Branch to push to (default: current branch)
+  --remote      Git remote name (default: origin)
+  --strict-push Fail the Slurm job if push fails
+  --git-user-name  Git user.name to use for auto-commit
+  --git-user-email Git user.email to use for auto-commit
 EOF
       exit 0
       ;;
@@ -90,6 +131,18 @@ echo "  episodes: $EPISODES"
 echo "  output: $OUTPUT_DIR"
 echo "  seed: $SEED"
 echo "  email: $EMAIL"
+echo "  auto-push: $AUTO_PUSH"
+if [[ "$AUTO_PUSH" == "1" ]]; then
+  echo "  push branch: ${PUSH_BRANCH:-<current-branch>}"
+  echo "  push remote: $PUSH_REMOTE"
+  echo "  strict push: $STRICT_PUSH"
+  if [[ -n "$GIT_USER_NAME" ]]; then
+    echo "  git user.name: $GIT_USER_NAME"
+  fi
+  if [[ -n "$GIT_USER_EMAIL" ]]; then
+    echo "  git user.email: $GIT_USER_EMAIL"
+  fi
+fi
 
 submit_output=$(sbatch \
   -A "$ACCOUNT" \
@@ -99,7 +152,7 @@ submit_output=$(sbatch \
   --cpus-per-task=6 \
   --mail-user="$EMAIL" \
   --mail-type=BEGIN,END,FAIL \
-  --export=ALL,EPISODES="$EPISODES",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED" \
+  --export=ALL,EPISODES="$EPISODES",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
   "$SCRIPT_PATH")
 
 echo "$submit_output"

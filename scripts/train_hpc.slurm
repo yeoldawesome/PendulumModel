@@ -42,6 +42,12 @@ SEED="${SEED:-42}"
 PYTHON_MODULE="${PYTHON_MODULE:-python/3.11}"
 EXPECTED_PYTHON="${EXPECTED_PYTHON:-3.11}"
 REQUIRE_GPU="${REQUIRE_GPU:-1}"
+AUTO_PUSH="${AUTO_PUSH:-0}"
+PUSH_BRANCH="${PUSH_BRANCH:-}"
+PUSH_REMOTE="${PUSH_REMOTE:-origin}"
+STRICT_PUSH="${STRICT_PUSH:-0}"
+GIT_USER_NAME="${GIT_USER_NAME:-}"
+GIT_USER_EMAIL="${GIT_USER_EMAIL:-}"
 
 module purge
 if ! module load "$PYTHON_MODULE"; then
@@ -134,6 +140,18 @@ echo "Episodes: $EPISODES"
 echo "Seed: $SEED"
 echo "Output dir: $OUTPUT_DIR"
 echo "Require GPU: $REQUIRE_GPU"
+echo "Auto push: $AUTO_PUSH"
+if [[ "$AUTO_PUSH" == "1" ]]; then
+  echo "Push branch override: ${PUSH_BRANCH:-<current-branch>}"
+  echo "Push remote: $PUSH_REMOTE"
+  echo "Strict push: $STRICT_PUSH"
+  if [[ -n "$GIT_USER_NAME" ]]; then
+    echo "Git user.name override: $GIT_USER_NAME"
+  fi
+  if [[ -n "$GIT_USER_EMAIL" ]]; then
+    echo "Git user.email override: $GIT_USER_EMAIL"
+  fi
+fi
 if command -v nvidia-smi >/dev/null 2>&1; then
   echo "GPU(s):"
   nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=csv,noheader
@@ -147,3 +165,59 @@ srun python3 train.py \
   --output-dir "$OUTPUT_DIR" \
   --seed "$SEED" \
   --require-gpu "$REQUIRE_GPU"
+
+auto_push_artifacts() {
+  local target_branch current_branch
+  if ! command -v git >/dev/null 2>&1; then
+    echo "Auto-push skipped: git is not available on this node."
+    return 1
+  fi
+
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Auto-push skipped: $SLURM_SUBMIT_DIR is not a git repository."
+    return 1
+  fi
+
+  current_branch=$(git rev-parse --abbrev-ref HEAD)
+  target_branch="$current_branch"
+  if [[ -n "$PUSH_BRANCH" ]]; then
+    target_branch="$PUSH_BRANCH"
+  fi
+
+  if [[ "$current_branch" != "$target_branch" ]]; then
+    if git show-ref --verify --quiet "refs/heads/$target_branch"; then
+      git switch "$target_branch"
+    else
+      git switch -c "$target_branch"
+    fi
+  fi
+
+  if [[ -n "$GIT_USER_NAME" ]]; then
+    git config user.name "$GIT_USER_NAME"
+  fi
+  if [[ -n "$GIT_USER_EMAIL" ]]; then
+    git config user.email "$GIT_USER_EMAIL"
+  fi
+
+  git add "$OUTPUT_DIR"
+  if git diff --cached --quiet; then
+    echo "Auto-push: no artifact changes to commit in $OUTPUT_DIR"
+    return 0
+  fi
+
+  git commit -m "hpc: pendulum artifacts from job ${SLURM_JOB_ID}"
+  git push "$PUSH_REMOTE" "$target_branch"
+  echo "Auto-push complete: pushed to $PUSH_REMOTE/$target_branch"
+  return 0
+}
+
+if [[ "$AUTO_PUSH" == "1" ]]; then
+  echo "Auto-push step starting..."
+  if ! auto_push_artifacts; then
+    echo "Auto-push step failed."
+    if [[ "$STRICT_PUSH" == "1" ]]; then
+      echo "STRICT_PUSH=1 so failing job on push error."
+      exit 1
+    fi
+  fi
+fi
