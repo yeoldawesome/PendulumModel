@@ -238,5 +238,5 @@ if [[ ! -f "$log_file" ]]; then
   exit 0
 fi
 
-echo "Streaming live logs (Ctrl+C to stop tail; job keeps running)..."
-tail -f "$log_file"
+echo "Streaming live logs from start (Ctrl+C to stop tail; job keeps running)..."
+tail -n +1 -f "$log_file"

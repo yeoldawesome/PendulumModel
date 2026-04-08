@@ -404,7 +404,10 @@ class PendulumViewerApp(tk.Tk):
                         time.sleep(frame_delay_ms / 1000.0)
                     episode_reward += float(reward)
                     if terminated or truncated:
-                        break
+                        # Continue showing motion until max_steps by resetting the env.
+                        state, _ = env.reset(seed=seed + episode_idx * 100000 + step_idx + 1)
+                        if use_2d:
+                            self.after(0, self._draw_2d_state, resolved_env_id, state.copy(), episode_idx, step_idx + 1)
 
                 self.after(0, self._append_result, episode_idx, episode_reward)
 
