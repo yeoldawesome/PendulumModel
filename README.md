@@ -122,11 +122,11 @@ bash scripts/cancel_all_jobs.sh
 
 Training writes to `artifacts/`:
 
-- `pendulum_actor_<timestamp>.weights.h5`
-- `pendulum_critic_<timestamp>.weights.h5`
-- `pendulum_target_actor_<timestamp>.weights.h5`
-- `pendulum_target_critic_<timestamp>.weights.h5`
-- `pendulum_rewards_<timestamp>.npy`
+- `model_pendulum_<YYYYMMDD_HHMMSS>_ep<episodes>_actor.weights.h5`
+- `model_pendulum_<YYYYMMDD_HHMMSS>_ep<episodes>_critic.weights.h5`
+- `model_pendulum_<YYYYMMDD_HHMMSS>_ep<episodes>_target_actor.weights.h5`
+- `model_pendulum_<YYYYMMDD_HHMMSS>_ep<episodes>_target_critic.weights.h5`
+- `model_pendulum_<YYYYMMDD_HHMMSS>_ep<episodes>_rewards.npy`
 - `metadata.json`
 
 ## Notes

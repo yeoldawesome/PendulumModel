@@ -20,8 +20,8 @@ AUTO_PUSH="1"
 PUSH_BRANCH=""
 PUSH_REMOTE="origin"
 STRICT_PUSH="0"
-GIT_USER_NAME=""
-GIT_USER_EMAIL=""
+GIT_USER_NAME="yeoldawesome"
+GIT_USER_EMAIL="dnlonglett@gmail.com"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

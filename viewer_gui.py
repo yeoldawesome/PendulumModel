@@ -88,7 +88,12 @@ class PendulumViewerApp(tk.Tk):
 
     def refresh_models(self) -> None:
         artifacts_dir = pathlib.Path("artifacts")
-        candidates = sorted(artifacts_dir.glob("pendulum_actor_*.weights.h5"), reverse=True)
+        candidates = sorted(artifacts_dir.glob("*.weights.h5"), reverse=True)
+        candidates = [
+            path
+            for path in candidates
+            if "actor" in path.name.lower() and "target_actor" not in path.name.lower()
+        ]
         model_paths = [str(path) for path in candidates]
         self.model_combo["values"] = model_paths
         if model_paths and self.model_var.get() not in model_paths:

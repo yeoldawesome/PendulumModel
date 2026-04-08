@@ -219,8 +219,11 @@ auto_push_artifacts() {
     git config user.email "$GIT_USER_EMAIL"
   fi
 
-  git add "$OUTPUT_DIR"
+  # Artifacts are often gitignored locally; force-add so HPC outputs can still be pushed.
+  git add -f "$OUTPUT_DIR"
   if git diff --cached --quiet; then
+    echo "Auto-push debug: staged diff is empty after adding $OUTPUT_DIR"
+    git status --short "$OUTPUT_DIR" || true
     echo "Auto-push: no artifact changes to commit in $OUTPUT_DIR"
     return 0
   fi

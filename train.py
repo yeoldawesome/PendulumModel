@@ -344,12 +344,13 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    artifact_prefix = f"model_pendulum_{run_stamp}_ep{cfg.total_episodes}"
 
-    actor_path = output_dir / f"pendulum_actor_{run_stamp}.weights.h5"
-    critic_path = output_dir / f"pendulum_critic_{run_stamp}.weights.h5"
-    target_actor_path = output_dir / f"pendulum_target_actor_{run_stamp}.weights.h5"
-    target_critic_path = output_dir / f"pendulum_target_critic_{run_stamp}.weights.h5"
-    rewards_path = output_dir / f"pendulum_rewards_{run_stamp}.npy"
+    actor_path = output_dir / f"{artifact_prefix}_actor.weights.h5"
+    critic_path = output_dir / f"{artifact_prefix}_critic.weights.h5"
+    target_actor_path = output_dir / f"{artifact_prefix}_target_actor.weights.h5"
+    target_critic_path = output_dir / f"{artifact_prefix}_target_critic.weights.h5"
+    rewards_path = output_dir / f"{artifact_prefix}_rewards.npy"
 
     actor_model.save_weights(actor_path)
     critic_model.save_weights(critic_path)
