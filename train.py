@@ -174,6 +174,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-gpu", type=int, default=0, choices=[0, 1], help="Exit with error when no GPU is detected.")
     parser.add_argument("--max-steps-per-episode", type=int, default=2000, help="Maximum environment steps per episode.")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environment instances for faster simulation.")
+    parser.add_argument("--log-interval-steps", type=int, default=100, help="Print in-episode progress every N steps.")
     return parser.parse_args()
 
 
@@ -221,6 +222,8 @@ def main() -> None:
     args = parse_args()
     if args.num_envs < 1:
         raise ValueError("--num-envs must be >= 1")
+    if args.log_interval_steps < 1:
+        raise ValueError("--log-interval-steps must be >= 1")
     if args.render and args.num_envs > 1:
         raise ValueError("--render is only supported with --num-envs=1")
 
@@ -257,6 +260,7 @@ def main() -> None:
     print(f"Environment: {args.env_id}")
     print(f"Action bounds: low={lower_bound} high={upper_bound}")
     print(f"Parallel envs: {args.num_envs}")
+    print(f"Log interval steps: {args.log_interval_steps}")
 
     gpus = tf.config.list_physical_devices("GPU")
     print(f"Visible GPUs: {len(gpus)}")
@@ -287,6 +291,7 @@ def main() -> None:
     episodic_rewards: list[float] = []
     rolling_avg_rewards: list[float] = []
     for episode in range(cfg.total_episodes):
+        print(f"Episode {episode + 1:03d}/{cfg.total_episodes} started", flush=True)
         if args.num_envs == 1:
             prev_state, _ = env.reset(seed=args.seed + episode)
         else:
@@ -297,7 +302,7 @@ def main() -> None:
         episode_reward = 0.0
         episode_rewards = np.zeros(args.num_envs, dtype=np.float32) if args.num_envs > 1 else None
 
-        for _ in range(cfg.max_steps_per_episode):
+        for step_idx in range(cfg.max_steps_per_episode):
             if args.num_envs == 1:
                 action = choose_action(
                     state=prev_state,
@@ -349,12 +354,22 @@ def main() -> None:
             else:
                 prev_state = state
 
+            if (step_idx + 1) % args.log_interval_steps == 0:
+                if args.num_envs == 1:
+                    partial_reward = episode_reward
+                else:
+                    partial_reward = float(np.mean(episode_rewards)) if episode_rewards is not None else 0.0
+                print(
+                    f"Episode {episode + 1:03d}/{cfg.total_episodes} | Step {step_idx + 1}/{cfg.max_steps_per_episode} | Partial reward: {partial_reward:.2f}",
+                    flush=True,
+                )
+
         if args.num_envs > 1 and episode_rewards is not None:
             episode_reward = float(np.mean(episode_rewards))
         episodic_rewards.append(episode_reward)
         avg_reward = float(np.mean(episodic_rewards[-40:]))
         rolling_avg_rewards.append(avg_reward)
-        print(f"Episode {episode + 1:03d}/{cfg.total_episodes} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f}")
+        print(f"Episode {episode + 1:03d}/{cfg.total_episodes} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f}", flush=True)
 
     env.close()
 
