@@ -8,7 +8,7 @@ set -euo pipefail
 EMAIL="dnlong5@iastate.edu"
 ACCOUNT="s2026.se.4390.01"
 PARTITION="instruction"
-EPISODES="100"
+EPISODES="500"
 ENV_ID="InvertedDoublePendulum-v5"
 OUTPUT_DIR="artifacts"
 SEED="42"
@@ -110,13 +110,13 @@ Defaults in this file:
   EMAIL=dnlong5@iastate.edu
   ACCOUNT=s2026.se.4390.01
   PARTITION=instruction
-  EPISODES=100
+  EPISODES=500
 
 Optional overrides:
   --email       Email address for Slurm notifications
   --account     Slurm account (example: s2026.se.4390.01)
   --partition   Slurm partition (default: instruction)
-  --episodes    Number of DDPG training episodes (default: 100)
+  --episodes    Number of DDPG training episodes (default: 500)
   --env-id      Gymnasium environment id (default: InvertedDoublePendulum-v5)
   --output-dir  Training output directory (default: artifacts)
   --seed        Training random seed (default: 42)

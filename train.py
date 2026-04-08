@@ -17,7 +17,7 @@ from keras import layers
 
 @dataclass
 class DDPGConfig:
-    total_episodes: int = 100
+    total_episodes: int = 500
     std_dev: float = 0.2
     critic_lr: float = 0.002
     actor_lr: float = 0.001
@@ -166,7 +166,7 @@ def update_targets(target: keras.Model, source: keras.Model, tau: float) -> None
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train DDPG on a continuous-control Gymnasium environment with Keras.")
-    parser.add_argument("--episodes", type=int, default=100, help="Number of training episodes.")
+    parser.add_argument("--episodes", type=int, default=500, help="Number of training episodes.")
     parser.add_argument("--env-id", type=str, default="InvertedDoublePendulum-v5", help="Gymnasium environment id (for example Pendulum-v1 or InvertedDoublePendulum-v5).")
     parser.add_argument("--output-dir", type=str, default="artifacts", help="Output directory for model files and metadata.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
@@ -261,6 +261,8 @@ def main() -> None:
     print(f"Action bounds: low={lower_bound} high={upper_bound}")
     print(f"Parallel envs: {args.num_envs}")
     print(f"Log interval steps: {args.log_interval_steps}")
+    if args.env_id.startswith("InvertedDoublePendulum") and args.episodes < 200:
+        print("Warning: InvertedDoublePendulum usually needs many more than 200 episodes for clear learning progress.", flush=True)
 
     gpus = tf.config.list_physical_devices("GPU")
     print(f"Visible GPUs: {len(gpus)}")

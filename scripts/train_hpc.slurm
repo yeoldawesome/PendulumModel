@@ -36,7 +36,7 @@ export KERAS_BACKEND=tensorflow
 export PYTHONUNBUFFERED=1
 export TF_CPP_MIN_LOG_LEVEL=2
 
-EPISODES="${EPISODES:-100}"
+EPISODES="${EPISODES:-500}"
 ENV_ID="${ENV_ID:-InvertedDoublePendulum-v5}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts}"
 SEED="${SEED:-42}"
