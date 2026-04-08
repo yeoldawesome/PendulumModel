@@ -8,19 +8,19 @@ set -euo pipefail
 EMAIL="dnlong5@iastate.edu"
 ACCOUNT="s2026.se.4390.01"
 PARTITION="instruction"
-EPISODES="1"
+EPISODES="100"
 ENV_ID="Pendulum-v1"
 OUTPUT_DIR="artifacts"
 SEED="42"
 MAX_STEPS_PER_EPISODE="200"
-NUM_ENVS="12"
-BATCH_SIZE="1024"
-UPDATES_PER_STEP="4"
-WARMUP_STEPS="4096"
+NUM_ENVS="6"
+BATCH_SIZE="256"
+UPDATES_PER_STEP="1"
+WARMUP_STEPS="1024"
 MIXED_PRECISION="1"
-XLA="1"
+XLA="0"
 GPUS="1"
-CPUS="16"
+CPUS="8"
 CPUS_SET_BY_USER="0"
 SCRIPT_PATH="scripts/train_hpc.slurm"
 AUTO_PUSH="1"
@@ -148,14 +148,14 @@ Optional overrides:
   --output-dir  Training output directory (default: artifacts)
   --seed        Training random seed (default: 42)
   --max-steps   Max env steps per episode (default: 200)
-  --num-envs    Number of parallel simulation envs (default: 12)
-  --batch-size  Training batch size per update (default: 1024)
-  --updates-per-step  Gradient updates after each env step (default: 4)
-  --warmup-steps Replay entries before updates begin (default: 4096)
+  --num-envs    Number of parallel simulation envs (default: 6)
+  --batch-size  Training batch size per update (default: 256)
+  --updates-per-step  Gradient updates after each env step (default: 1)
+  --warmup-steps Replay entries before updates begin (default: 1024)
   --mixed-precision  Enable mixed precision, 0 or 1 (default: 1)
-  --xla         Enable XLA JIT, 0 or 1 (default: 1)
+  --xla         Enable XLA JIT, 0 or 1 (default: 0)
   --gpus        Number of A100 GPUs to request (default: 1)
-  --cpus        CPUs per task (default: 16)
+  --cpus        CPUs per task (default: 8)
   --script      Slurm script path (default: scripts/train_hpc.slurm)
   --push        Auto-commit and push artifacts after successful training (default)
   --no-push     Disable auto-push

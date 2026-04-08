@@ -24,10 +24,10 @@ class DDPGConfig:
     gamma: float = 0.99
     tau: float = 0.005
     buffer_capacity: int = 50000
-    batch_size: int = 1024
+    batch_size: int = 256
     max_steps_per_episode: int = 200
-    updates_per_step: int = 4
-    warmup_steps: int = 4096
+    updates_per_step: int = 1
+    warmup_steps: int = 1024
 
 
 class OUActionNoise:
@@ -176,11 +176,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-gpu", type=int, default=0, choices=[0, 1], help="Exit with error when no GPU is detected.")
     parser.add_argument("--max-steps-per-episode", type=int, default=200, help="Maximum environment steps per episode.")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environment instances for faster simulation.")
-    parser.add_argument("--batch-size", type=int, default=1024, help="Replay buffer sample batch size for each gradient update.")
-    parser.add_argument("--updates-per-step", type=int, default=4, help="Number of gradient updates to run after each env step.")
-    parser.add_argument("--warmup-steps", type=int, default=4096, help="Minimum replay entries before training starts.")
+    parser.add_argument("--batch-size", type=int, default=256, help="Replay buffer sample batch size for each gradient update.")
+    parser.add_argument("--updates-per-step", type=int, default=1, help="Number of gradient updates to run after each env step.")
+    parser.add_argument("--warmup-steps", type=int, default=1024, help="Minimum replay entries before training starts.")
     parser.add_argument("--mixed-precision", type=int, default=1, choices=[0, 1], help="Enable mixed_float16 policy on GPU for faster training.")
-    parser.add_argument("--xla", type=int, default=1, choices=[0, 1], help="Enable TensorFlow XLA JIT compilation for train_step.")
+    parser.add_argument("--xla", type=int, default=0, choices=[0, 1], help="Enable TensorFlow XLA JIT compilation for train_step.")
     return parser.parse_args()
 
 
@@ -314,6 +314,7 @@ def main() -> None:
 
     episodic_rewards: list[float] = []
     rolling_avg_rewards: list[float] = []
+    training_started = False
 
     for episode in range(cfg.total_episodes):
         if args.num_envs == 1:
@@ -353,6 +354,9 @@ def main() -> None:
                 episode_rewards += reward.astype(np.float32)
 
             if replay_buffer.size() >= cfg.warmup_steps and replay_buffer.can_sample():
+                if not training_started:
+                    training_started = True
+                    print(f"Warmup complete at replay size {replay_buffer.size()}; starting gradient updates.")
                 for _ in range(cfg.updates_per_step):
                     state_batch, action_batch, reward_batch, next_state_batch = replay_buffer.sample()
                     train_step(
