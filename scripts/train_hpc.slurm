@@ -18,6 +18,7 @@
 #SBATCH --ntasks-per-core=1
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:a100:1
+#SBATCH --signal=B:TERM@90
 #SBATCH --partition=instruction
 #SBATCH --account=s2026.se.4390.01
 
@@ -215,6 +216,7 @@ if [[ -n "${SLURM_GPUS:-}" && "${SLURM_GPUS}" -gt 1 ]]; then
   echo "Note: This training script is single-process DDPG; requesting >1 GPU usually does not speed it up much."
 fi
 
+set +e
 srun python3 train.py \
   --episodes "$EPISODES" \
   --env-id "$ENV_ID" \
@@ -233,6 +235,16 @@ srun python3 train.py \
   --eval-interval "$EVAL_INTERVAL" \
   --eval-episodes "$EVAL_EPISODES" \
   --require-gpu "$REQUIRE_GPU"
+TRAIN_EXIT_CODE=$?
+set -e
+
+if [[ "$TRAIN_EXIT_CODE" -eq 0 ]]; then
+  echo "Training finished successfully."
+elif [[ "$TRAIN_EXIT_CODE" -eq 143 || "$TRAIN_EXIT_CODE" -eq 130 ]]; then
+  echo "Training was interrupted (exit code $TRAIN_EXIT_CODE). Partial artifacts should be saved."
+else
+  echo "Training failed with exit code $TRAIN_EXIT_CODE."
+fi
 
 auto_push_artifacts() {
   local target_branch current_branch
@@ -292,3 +304,9 @@ if [[ "$AUTO_PUSH" == "1" ]]; then
     fi
   fi
 fi
+
+if [[ "$TRAIN_EXIT_CODE" -eq 143 || "$TRAIN_EXIT_CODE" -eq 130 ]]; then
+  exit 0
+fi
+
+exit "$TRAIN_EXIT_CODE"

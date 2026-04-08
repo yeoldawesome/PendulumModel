@@ -16,4 +16,7 @@ git clone https://github.com/yeoldawesome/PendulumModel.git
 cd PendulumModel
 git pull --ff-only origin main
 
-eps 1063
+potentialy goat commit 
+Increase default training episodes to 4000 in HPC submission script
+
+eps 2004/4000

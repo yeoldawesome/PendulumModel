@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import random
+import signal
 from dataclasses import dataclass
 
 os.environ.setdefault("KERAS_BACKEND", "tensorflow")
@@ -300,6 +301,17 @@ def main() -> None:
         max_steps_per_episode=args.max_steps_per_episode,
     )
 
+    stop_requested = False
+
+    def _request_stop(signum: int, _frame) -> None:
+        nonlocal stop_requested
+        if not stop_requested:
+            stop_requested = True
+            print(f"Received signal {signum}; finishing current step and saving partial artifacts...", flush=True)
+
+    signal.signal(signal.SIGTERM, _request_stop)
+    signal.signal(signal.SIGINT, _request_stop)
+
     set_seed(args.seed)
 
     render_mode = "human" if args.render else None
@@ -375,7 +387,11 @@ def main() -> None:
     best_eval_reward = float("-inf")
     best_eval_episode = -1
     best_eval_actor_weights = None
+    completed_episodes = 0
     for episode in range(cfg.total_episodes):
+        if stop_requested:
+            print("Stop requested before starting next episode; ending training loop.", flush=True)
+            break
         print(f"Episode {episode + 1:03d}/{cfg.total_episodes} started", flush=True)
         episode_noise = linear_decay(episode, cfg.std_dev_start, cfg.std_dev_end, cfg.std_dev_decay_episodes)
         noise.std_dev = episode_noise * np.ones(noise_shape, dtype=np.float32)
@@ -391,6 +407,8 @@ def main() -> None:
         episode_rewards = np.zeros(args.num_envs, dtype=np.float32) if args.num_envs > 1 else None
 
         for step_idx in range(cfg.max_steps_per_episode):
+            if stop_requested:
+                break
             episode_steps = step_idx + 1
             if args.num_envs == 1:
                 action = choose_action(
@@ -487,6 +505,11 @@ def main() -> None:
             f"Episode {episode + 1:03d}/{cfg.total_episodes} | Steps: {episode_steps:04d} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
             flush=True,
         )
+        completed_episodes = episode + 1
+
+        if stop_requested:
+            print("Graceful stop requested; saving artifacts from completed progress.", flush=True)
+            break
 
     env.close()
 
@@ -531,6 +554,8 @@ def main() -> None:
         "env": args.env_id,
         "seed": args.seed,
         "episodes": cfg.total_episodes,
+        "completed_episodes": completed_episodes,
+        "stopped_early": stop_requested,
         "max_steps_per_episode": cfg.max_steps_per_episode,
         "num_envs": args.num_envs,
         "buffer_capacity": cfg.buffer_capacity,
