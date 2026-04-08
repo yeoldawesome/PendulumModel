@@ -72,12 +72,12 @@ This wrapper submits:
 - `--cpus-per-task=<cpus>`
 - exported vars: `EPISODES`, `OUTPUT_DIR`, `SEED`, `MAX_STEPS_PER_EPISODE`, `NUM_ENVS`, `BATCH_SIZE`
 
-The submit wrapper now auto-scales CPUs to at least `num-envs + 2` unless you explicitly set `--cpus`.
+The submit wrapper now auto-scales CPUs to at least `num-envs + 4` unless you explicitly set `--cpus`.
 
 Speed tuning examples:
 
 ```bash
-bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100 --max-steps 150 --num-envs 8 --batch-size 256 --gpus 1
+bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100 --max-steps 150 --num-envs 12 --batch-size 1024 --updates-per-step 4 --warmup-steps 4096 --mixed-precision 1 --xla 1 --gpus 1
 ```
 
 Optional two-GPU request (usually lower value than running two separate 1-GPU jobs for this script):
