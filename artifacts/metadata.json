@@ -1,5 +1,5 @@
 {
-  "created_at": "20260408_154632",
+  "created_at": "20260408_154934",
   "env": "InvertedDoublePendulum-v5",
   "seed": 42,
   "episodes": 10,
@@ -14,9 +14,9 @@
   "std_dev": 0.2,
   "visible_gpus": 1,
   "final_avg_reward_40": 69.77286463110602,
-  "actor_weights": "model_pendulum_20260408_154632_ep10_actor.weights.h5",
-  "critic_weights": "model_pendulum_20260408_154632_ep10_critic.weights.h5",
-  "target_actor_weights": "model_pendulum_20260408_154632_ep10_target_actor.weights.h5",
-  "target_critic_weights": "model_pendulum_20260408_154632_ep10_target_critic.weights.h5",
-  "rewards_file": "model_pendulum_20260408_154632_ep10_rewards.npy"
+  "actor_weights": "model_pendulum_20260408_154934_ep10_actor.weights.h5",
+  "critic_weights": "model_pendulum_20260408_154934_ep10_critic.weights.h5",
+  "target_actor_weights": "model_pendulum_20260408_154934_ep10_target_actor.weights.h5",
+  "target_critic_weights": "model_pendulum_20260408_154934_ep10_target_critic.weights.h5",
+  "rewards_file": "model_pendulum_20260408_154934_ep10_rewards.npy"
 }
