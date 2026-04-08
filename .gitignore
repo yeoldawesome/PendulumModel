@@ -1,4 +1,6 @@
 .venv/
+.venv_fresh/
+.venv_broken/
 __pycache__/
 *.pyc
 artifacts/
