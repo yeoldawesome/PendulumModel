@@ -24,7 +24,7 @@ class DDPGConfig:
     gamma: float = 0.99
     tau: float = 0.005
     buffer_capacity: int = 50000
-    batch_size: int = 64
+    batch_size: int = 256
     max_steps_per_episode: int = 200
 
 
@@ -164,6 +164,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-gpu", type=int, default=0, choices=[0, 1], help="Exit with error when no GPU is detected.")
     parser.add_argument("--max-steps-per-episode", type=int, default=200, help="Maximum environment steps per episode.")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel Pendulum environments for faster simulation.")
+    parser.add_argument("--batch-size", type=int, default=256, help="Replay buffer sample batch size for each gradient update.")
     return parser.parse_args()
 
 
@@ -211,10 +212,16 @@ def main() -> None:
     args = parse_args()
     if args.num_envs < 1:
         raise ValueError("--num-envs must be >= 1")
+    if args.batch_size < 1:
+        raise ValueError("--batch-size must be >= 1")
     if args.render and args.num_envs > 1:
         raise ValueError("--render is only supported with --num-envs=1")
 
-    cfg = DDPGConfig(total_episodes=args.episodes, max_steps_per_episode=args.max_steps_per_episode)
+    cfg = DDPGConfig(
+        total_episodes=args.episodes,
+        max_steps_per_episode=args.max_steps_per_episode,
+        batch_size=args.batch_size,
+    )
 
     set_seed(args.seed)
 
@@ -238,6 +245,7 @@ def main() -> None:
     print(f"Action space: {num_actions}")
     print(f"Action bounds: [{lower_bound}, {upper_bound}]")
     print(f"Parallel envs: {args.num_envs}")
+    print(f"Batch size: {cfg.batch_size}")
 
     gpus = tf.config.list_physical_devices("GPU")
     print(f"Visible GPUs: {len(gpus)}")

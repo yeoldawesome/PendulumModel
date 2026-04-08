@@ -70,21 +70,28 @@ This wrapper submits:
 
 - `--gres=gpu:a100:<gpus>`
 - `--cpus-per-task=<cpus>`
-- exported vars: `EPISODES`, `OUTPUT_DIR`, `SEED`, `MAX_STEPS_PER_EPISODE`, `NUM_ENVS`
+- exported vars: `EPISODES`, `OUTPUT_DIR`, `SEED`, `MAX_STEPS_PER_EPISODE`, `NUM_ENVS`, `BATCH_SIZE`
+
+The submit wrapper now auto-scales CPUs to at least `num-envs + 2` unless you explicitly set `--cpus`.
 
 Speed tuning examples:
 
 ```bash
-bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100 --max-steps 150 --num-envs 8 --cpus 12 --gpus 1
+bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100 --max-steps 150 --num-envs 8 --batch-size 256 --gpus 1
 ```
 
-Optional two-GPU request:
+Optional two-GPU request (usually lower value than running two separate 1-GPU jobs for this script):
 
 ```bash
-bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100 --max-steps 150 --num-envs 8 --cpus 12 --gpus 2
+bash scripts/submit_and_watch_hpc.sh --email yournetid@iastate.edu --account s2026.se.4390.01 --partition instruction --episodes 100 --max-steps 150 --num-envs 8 --batch-size 256 --gpus 2
 ```
 
-Note: this trainer now supports parallel simulation via `--num-envs`, which usually improves speed more than adding a second GPU for this single-process DDPG setup.
+Note: this trainer supports parallel simulation via `--num-envs`, which usually improves speed more than adding a second GPU for this single-process DDPG setup.
+
+Slurm dependency install behavior:
+
+- The job now reuses the `/work/classtmp/$USER/ddpg-pendulum/.venv` and skips `pip install` when `requirements.txt`, Python version, and TensorFlow spec have not changed.
+- Set `FORCE_PIP_INSTALL=1` when submitting if you want to force dependency reinstall.
 
 ## Direct Slurm submit (without wrapper)
 

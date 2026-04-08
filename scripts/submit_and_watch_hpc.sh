@@ -13,8 +13,10 @@ OUTPUT_DIR="artifacts"
 SEED="42"
 MAX_STEPS_PER_EPISODE="200"
 NUM_ENVS="1"
+BATCH_SIZE="256"
 GPUS="1"
 CPUS="6"
+CPUS_SET_BY_USER="0"
 SCRIPT_PATH="scripts/train_hpc.slurm"
 AUTO_PUSH="1"
 PUSH_BRANCH=""
@@ -57,12 +59,17 @@ while [[ $# -gt 0 ]]; do
       NUM_ENVS="$2"
       shift 2
       ;;
+    --batch-size)
+      BATCH_SIZE="$2"
+      shift 2
+      ;;
     --gpus)
       GPUS="$2"
       shift 2
       ;;
     --cpus)
       CPUS="$2"
+      CPUS_SET_BY_USER="1"
       shift 2
       ;;
     --script)
@@ -116,6 +123,7 @@ Optional overrides:
   --seed        Training random seed (default: 42)
   --max-steps   Max env steps per episode (default: 200)
   --num-envs    Number of parallel simulation envs (default: 1)
+  --batch-size  Training batch size per update (default: 256)
   --gpus        Number of A100 GPUs to request (default: 1)
   --cpus        CPUs per task (default: 6)
   --script      Slurm script path (default: scripts/train_hpc.slurm)
@@ -166,6 +174,18 @@ if ! [[ "$NUM_ENVS" =~ ^[1-9][0-9]*$ ]]; then
   exit 1
 fi
 
+if ! [[ "$BATCH_SIZE" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Invalid --batch-size value: $BATCH_SIZE (must be a positive integer)." >&2
+  exit 1
+fi
+
+if [[ "$CPUS_SET_BY_USER" == "0" ]]; then
+  suggested_cpus=$((NUM_ENVS + 2))
+  if (( suggested_cpus > CPUS )); then
+    CPUS="$suggested_cpus"
+  fi
+fi
+
 mkdir -p logs
 
 echo "Submitting DDPG pendulum job..."
@@ -174,6 +194,7 @@ echo "  partition: $PARTITION"
 echo "  episodes: $EPISODES"
 echo "  max-steps: $MAX_STEPS_PER_EPISODE"
 echo "  num-envs: $NUM_ENVS"
+echo "  batch-size: $BATCH_SIZE"
 echo "  output: $OUTPUT_DIR"
 echo "  seed: $SEED"
 echo "  gpus: $GPUS"
@@ -200,7 +221,7 @@ submit_output=$(sbatch \
   --cpus-per-task="$CPUS" \
   --mail-user="$EMAIL" \
   --mail-type=BEGIN,END,FAIL \
-  --export=ALL,EPISODES="$EPISODES",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
+  --export=ALL,EPISODES="$EPISODES",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",BATCH_SIZE="$BATCH_SIZE",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
   "$SCRIPT_PATH")
 
 echo "$submit_output"
