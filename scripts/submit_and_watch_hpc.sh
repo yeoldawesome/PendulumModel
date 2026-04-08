@@ -16,7 +16,7 @@ NUM_ENVS="1"
 GPUS="1"
 CPUS="6"
 SCRIPT_PATH="scripts/train_hpc.slurm"
-AUTO_PUSH="0"
+AUTO_PUSH="1"
 PUSH_BRANCH=""
 PUSH_REMOTE="origin"
 STRICT_PUSH="0"
@@ -119,8 +119,8 @@ Optional overrides:
   --gpus        Number of A100 GPUs to request (default: 1)
   --cpus        CPUs per task (default: 6)
   --script      Slurm script path (default: scripts/train_hpc.slurm)
-  --push        Auto-commit and push artifacts after successful training
-  --no-push     Disable auto-push (default)
+  --push        Auto-commit and push artifacts after successful training (default)
+  --no-push     Disable auto-push
   --branch      Branch to push to (default: current branch)
   --remote      Git remote name (default: origin)
   --strict-push Fail the Slurm job if push fails
