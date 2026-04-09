@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import random
+import re
 from dataclasses import dataclass
 
 os.environ.setdefault("KERAS_BACKEND", "tensorflow")
@@ -254,6 +255,21 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Save actor checkpoints every N episodes (0 disables periodic checkpoints).",
     )
+    parser.add_argument(
+        "--resume-actor-weights",
+        type=str,
+        default="",
+        help="Path to actor weights file (.weights.h5) to continue training from.",
+    )
+    parser.add_argument(
+        "--resume-episode-offset",
+        type=int,
+        default=-1,
+        help=(
+            "Episode number offset for resumed runs. If negative (default), the script tries to infer it "
+            "from the resume filename pattern *_ep<NUM>_*."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -281,6 +297,14 @@ def make_env_slug(env_id: str) -> str:
     slug = env_id.lower().replace("-", "_")
     slug = "".join(ch for ch in slug if ch.isalnum() or ch == "_")
     return slug or "unknown_env"
+
+
+def infer_episode_offset_from_weights(path_str: str) -> int | None:
+    file_name = pathlib.Path(path_str).name
+    match = re.search(r"_ep(\d+)_", file_name)
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 @tf.function
@@ -335,6 +359,8 @@ def main() -> None:
         raise ValueError("--warmup-steps must be >= 0")
     if args.checkpoint_interval_episodes < 0:
         raise ValueError("--checkpoint-interval-episodes must be >= 0")
+    if args.resume_episode_offset < -1:
+        raise ValueError("--resume-episode-offset must be >= -1")
     if args.noise_start < 0 or args.noise_end < 0:
         raise ValueError("--noise-start and --noise-end must be >= 0")
     if args.render and args.num_envs > 1:
@@ -395,6 +421,8 @@ def main() -> None:
     print(f"Warmup steps: {cfg.warmup_steps}")
     print(f"Checkpoint interval episodes: {cfg.checkpoint_interval_episodes}")
     print(f"Save full artifacts: {args.save_full_artifacts}")
+    print(f"Resume actor weights: {resume_actor_weights or '<none>'}")
+    print(f"Resume episode offset: {episode_offset}")
     print(f"Exploration noise: start={cfg.std_dev_start:.3f} end={cfg.std_dev_end:.3f} decay_episodes={cfg.std_dev_decay_episodes}")
     if resolved_env_id.startswith("InvertedDoublePendulum") and args.episodes < 200:
         print("Warning: InvertedDoublePendulum usually needs many more than 200 episodes for clear learning progress.", flush=True)
@@ -414,6 +442,31 @@ def main() -> None:
 
     target_actor = get_actor(num_states=num_states, num_actions=num_actions, upper_bound=upper_bound)
     target_critic = get_critic(num_states=num_states, num_actions=num_actions)
+
+    resume_actor_weights = args.resume_actor_weights.strip()
+    episode_offset = args.resume_episode_offset
+    if resume_actor_weights:
+        resume_path = pathlib.Path(resume_actor_weights)
+        if not resume_path.exists():
+            raise FileNotFoundError(f"--resume-actor-weights not found: {resume_path}")
+        actor_model.load_weights(resume_path)
+        print(f"Loaded actor weights from: {resume_path}")
+
+        if episode_offset < 0:
+            inferred_offset = infer_episode_offset_from_weights(resume_actor_weights)
+            if inferred_offset is not None:
+                episode_offset = inferred_offset
+                print(f"Inferred resume episode offset from filename: {episode_offset}")
+            else:
+                episode_offset = 0
+                print("Could not infer resume episode offset from filename; defaulting to 0.")
+    else:
+        if episode_offset == -1:
+            episode_offset = 0
+
+    if episode_offset < 0:
+        episode_offset = 0
+
     target_actor.set_weights(actor_model.get_weights())
     target_critic.set_weights(critic_model.get_weights())
 
@@ -447,13 +500,15 @@ def main() -> None:
     total_env_steps = 0
     latest_checkpoint_path: pathlib.Path | None = None
     for episode in range(cfg.total_episodes):
-        print(f"Episode {episode + 1:03d}/{cfg.total_episodes}", flush=True)
-        episode_noise = linear_decay(episode, cfg.std_dev_start, cfg.std_dev_end, cfg.std_dev_decay_episodes)
+        global_episode = episode_offset + episode + 1
+        total_episode_target = episode_offset + cfg.total_episodes
+        print(f"Episode {global_episode:03d}/{total_episode_target}", flush=True)
+        episode_noise = linear_decay(global_episode - 1, cfg.std_dev_start, cfg.std_dev_end, cfg.std_dev_decay_episodes)
         noise.std_dev = episode_noise * np.ones(noise_shape, dtype=np.float32)
         if args.num_envs == 1:
-            prev_state, _ = env.reset(seed=args.seed + episode)
+            prev_state, _ = env.reset(seed=args.seed + global_episode - 1)
         else:
-            seeds = [args.seed + episode * args.num_envs + i for i in range(args.num_envs)]
+            seeds = [args.seed + (global_episode - 1) * args.num_envs + i for i in range(args.num_envs)]
             prev_state, _ = env.reset(seed=seeds)
 
         noise.reset()
@@ -533,7 +588,7 @@ def main() -> None:
 
             if args.progress_bar == 0 and (step_idx + 1) % args.log_interval_steps == 0:
                 print(
-                    f"Episode {episode + 1:03d}/{cfg.total_episodes} | Step {step_idx + 1}/{cfg.max_steps_per_episode} | Partial reward: {partial_reward:.2f}",
+                    f"Episode {global_episode:03d}/{total_episode_target} | Step {step_idx + 1}/{cfg.max_steps_per_episode} | Partial reward: {partial_reward:.2f}",
                     flush=True,
                 )
 
@@ -548,12 +603,12 @@ def main() -> None:
             best_episode = episode + 1
             best_actor_weights = actor_model.get_weights()
         print(
-            f"Episode {episode + 1:03d}/{cfg.total_episodes} | Steps: {episode_steps:04d} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
+            f"Episode {global_episode:03d}/{total_episode_target} | Steps: {episode_steps:04d} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
             flush=True,
         )
 
-        if cfg.checkpoint_interval_episodes > 0 and (episode + 1) % cfg.checkpoint_interval_episodes == 0:
-            checkpoint_path = save_actor_checkpoint(episode + 1)
+        if cfg.checkpoint_interval_episodes > 0 and global_episode % cfg.checkpoint_interval_episodes == 0:
+            checkpoint_path = save_actor_checkpoint(global_episode)
             if latest_checkpoint_path is not None and latest_checkpoint_path != checkpoint_path and latest_checkpoint_path.exists():
                 latest_checkpoint_path.unlink()
             latest_checkpoint_path = checkpoint_path
@@ -561,7 +616,8 @@ def main() -> None:
 
     env.close()
     episodes_completed = len(episodic_rewards)
-    artifact_prefix = f"model_pendulum_j{args.joints}_ep{episodes_completed}_{run_stamp}_{env_slug}"
+    total_episodes_completed = episode_offset + episodes_completed
+    artifact_prefix = f"model_pendulum_j{args.joints}_ep{total_episodes_completed}_{run_stamp}_{env_slug}"
 
     actor_path = output_dir / f"{artifact_prefix}_actor.weights.h5"
     if best_actor_weights is not None:
@@ -591,7 +647,10 @@ def main() -> None:
             "seed": args.seed,
             "episodes_requested": cfg.total_episodes,
             "episodes_completed": episodes_completed,
-            "episodes": episodes_completed,
+            "episodes": total_episodes_completed,
+            "resume_actor_weights": resume_actor_weights if resume_actor_weights else None,
+            "resume_episode_offset": episode_offset,
+            "total_episodes_completed": total_episodes_completed,
             "max_steps_per_episode": cfg.max_steps_per_episode,
             "num_envs": args.num_envs,
             "buffer_capacity": cfg.buffer_capacity,

@@ -53,6 +53,8 @@ WARMUP_STEPS="${WARMUP_STEPS:-4096}"
 NOISE_START="${NOISE_START:-0.3}"
 NOISE_END="${NOISE_END:-0.05}"
 NOISE_DECAY_EPISODES="${NOISE_DECAY_EPISODES:-300}"
+RESUME_ACTOR_WEIGHTS="${RESUME_ACTOR_WEIGHTS:-}"
+RESUME_EPISODE_OFFSET="${RESUME_EPISODE_OFFSET:--1}"
 PYTHON_MODULE="${PYTHON_MODULE:-python/3.11}"
 EXPECTED_PYTHON="${EXPECTED_PYTHON:-3.11}"
 REQUIRE_GPU="${REQUIRE_GPU:-1}"
@@ -191,6 +193,8 @@ echo "Updates per step: $UPDATES_PER_STEP"
 echo "Warmup steps: $WARMUP_STEPS"
 echo "Checkpoint interval episodes: $CHECKPOINT_INTERVAL_EPISODES"
 echo "Noise start/end/decay: $NOISE_START / $NOISE_END / $NOISE_DECAY_EPISODES"
+echo "Resume actor weights: ${RESUME_ACTOR_WEIGHTS:-<none>}"
+echo "Resume episode offset: $RESUME_EPISODE_OFFSET"
 echo "Seed: $SEED"
 echo "Output dir: $OUTPUT_DIR"
 echo "Require GPU: $REQUIRE_GPU"
@@ -218,25 +222,35 @@ if [[ -n "${SLURM_GPUS:-}" && "${SLURM_GPUS}" -gt 1 ]]; then
   echo "Note: This training script is single-process DDPG; requesting >1 GPU usually does not speed it up much."
 fi
 
-srun python3 train.py \
-  --episodes "$EPISODES" \
-  --env-id "$ENV_ID" \
-  --output-dir "$OUTPUT_DIR" \
-  --seed "$SEED" \
-  --max-steps-per-episode "$MAX_STEPS_PER_EPISODE" \
-  --num-envs "$NUM_ENVS" \
-  --log-interval-steps "$LOG_INTERVAL_STEPS" \
-  --actor-lr "$ACTOR_LR" \
-  --critic-lr "$CRITIC_LR" \
-  --buffer-capacity "$BUFFER_CAPACITY" \
-  --batch-size "$BATCH_SIZE" \
-  --updates-per-step "$UPDATES_PER_STEP" \
-  --warmup-steps "$WARMUP_STEPS" \
-  --checkpoint-interval-episodes "$CHECKPOINT_INTERVAL_EPISODES" \
-  --noise-start "$NOISE_START" \
-  --noise-end "$NOISE_END" \
-  --noise-decay-episodes "$NOISE_DECAY_EPISODES" \
+TRAIN_ARGS=(
+  --episodes "$EPISODES"
+  --env-id "$ENV_ID"
+  --output-dir "$OUTPUT_DIR"
+  --seed "$SEED"
+  --max-steps-per-episode "$MAX_STEPS_PER_EPISODE"
+  --num-envs "$NUM_ENVS"
+  --log-interval-steps "$LOG_INTERVAL_STEPS"
+  --actor-lr "$ACTOR_LR"
+  --critic-lr "$CRITIC_LR"
+  --buffer-capacity "$BUFFER_CAPACITY"
+  --batch-size "$BATCH_SIZE"
+  --updates-per-step "$UPDATES_PER_STEP"
+  --warmup-steps "$WARMUP_STEPS"
+  --checkpoint-interval-episodes "$CHECKPOINT_INTERVAL_EPISODES"
+  --noise-start "$NOISE_START"
+  --noise-end "$NOISE_END"
+  --noise-decay-episodes "$NOISE_DECAY_EPISODES"
   --require-gpu "$REQUIRE_GPU"
+)
+
+if [[ -n "$RESUME_ACTOR_WEIGHTS" ]]; then
+  TRAIN_ARGS+=(--resume-actor-weights "$RESUME_ACTOR_WEIGHTS")
+fi
+if [[ -n "$RESUME_EPISODE_OFFSET" ]]; then
+  TRAIN_ARGS+=(--resume-episode-offset "$RESUME_EPISODE_OFFSET")
+fi
+
+srun python3 train.py "${TRAIN_ARGS[@]}"
 
 auto_push_artifacts() {
   local target_branch current_branch
