@@ -27,6 +27,9 @@ JOINTS_TO_ENV_ID = {
 
 SUCCESS_STEPS_THRESHOLD_1 = 300
 SUCCESS_STEPS_THRESHOLD_2 = 500
+SUCCESS_STEPS_THRESHOLD_3 = 10
+SUCCESS_STEPS_THRESHOLD_4 = 50
+SUCCESS_STEPS_THRESHOLD_5 = 100
 
 
 @dataclass
@@ -358,6 +361,9 @@ def run_deterministic_evaluation(
     success_no_reset_flags: list[int] = []
     success_at_threshold_1_flags: list[int] = []
     success_at_threshold_2_flags: list[int] = []
+    success_at_threshold_3_flags: list[int] = []
+    success_at_threshold_4_flags: list[int] = []
+    success_at_threshold_5_flags: list[int] = []
 
     try:
         for eval_idx in range(episodes):
@@ -386,6 +392,9 @@ def run_deterministic_evaluation(
             success_no_reset_flags.append(1 if resets == 0 else 0)
             success_at_threshold_1_flags.append(1 if first_failure_step >= SUCCESS_STEPS_THRESHOLD_1 else 0)
             success_at_threshold_2_flags.append(1 if first_failure_step >= SUCCESS_STEPS_THRESHOLD_2 else 0)
+            success_at_threshold_3_flags.append(1 if first_failure_step >= SUCCESS_STEPS_THRESHOLD_3 else 0)
+            success_at_threshold_4_flags.append(1 if first_failure_step >= SUCCESS_STEPS_THRESHOLD_4 else 0)
+            success_at_threshold_5_flags.append(1 if first_failure_step >= SUCCESS_STEPS_THRESHOLD_5 else 0)
     finally:
         eval_env.close()
 
@@ -395,6 +404,9 @@ def run_deterministic_evaluation(
     success_no_reset_arr = np.asarray(success_no_reset_flags, dtype=np.float32)
     success_at_threshold_1_arr = np.asarray(success_at_threshold_1_flags, dtype=np.float32)
     success_at_threshold_2_arr = np.asarray(success_at_threshold_2_flags, dtype=np.float32)
+    success_at_threshold_3_arr = np.asarray(success_at_threshold_3_flags, dtype=np.float32)
+    success_at_threshold_4_arr = np.asarray(success_at_threshold_4_flags, dtype=np.float32)
+    success_at_threshold_5_arr = np.asarray(success_at_threshold_5_flags, dtype=np.float32)
 
     n = max(int(returns_arr.size), 1)
     mean_return = float(np.mean(returns_arr))
@@ -424,6 +436,27 @@ def run_deterministic_evaluation(
     success_at_threshold_2_ci95_low = max(0.0, success_at_threshold_2_rate - ci95_scale * success_at_threshold_2_stderr)
     success_at_threshold_2_ci95_high = min(1.0, success_at_threshold_2_rate + ci95_scale * success_at_threshold_2_stderr)
 
+    success_at_threshold_3_rate = float(np.mean(success_at_threshold_3_arr))
+    success_at_threshold_3_stderr = (
+        float(np.sqrt(success_at_threshold_3_rate * (1.0 - success_at_threshold_3_rate) / n)) if n > 1 else 0.0
+    )
+    success_at_threshold_3_ci95_low = max(0.0, success_at_threshold_3_rate - ci95_scale * success_at_threshold_3_stderr)
+    success_at_threshold_3_ci95_high = min(1.0, success_at_threshold_3_rate + ci95_scale * success_at_threshold_3_stderr)
+
+    success_at_threshold_4_rate = float(np.mean(success_at_threshold_4_arr))
+    success_at_threshold_4_stderr = (
+        float(np.sqrt(success_at_threshold_4_rate * (1.0 - success_at_threshold_4_rate) / n)) if n > 1 else 0.0
+    )
+    success_at_threshold_4_ci95_low = max(0.0, success_at_threshold_4_rate - ci95_scale * success_at_threshold_4_stderr)
+    success_at_threshold_4_ci95_high = min(1.0, success_at_threshold_4_rate + ci95_scale * success_at_threshold_4_stderr)
+
+    success_at_threshold_5_rate = float(np.mean(success_at_threshold_5_arr))
+    success_at_threshold_5_stderr = (
+        float(np.sqrt(success_at_threshold_5_rate * (1.0 - success_at_threshold_5_rate) / n)) if n > 1 else 0.0
+    )
+    success_at_threshold_5_ci95_low = max(0.0, success_at_threshold_5_rate - ci95_scale * success_at_threshold_5_stderr)
+    success_at_threshold_5_ci95_high = min(1.0, success_at_threshold_5_rate + ci95_scale * success_at_threshold_5_stderr)
+
     return {
         "eval_episodes": float(episodes),
         "mean_return": mean_return,
@@ -444,6 +477,15 @@ def run_deterministic_evaluation(
         "success_at_500_rate": success_at_threshold_2_rate,
         "success_at_500_ci95_low": float(success_at_threshold_2_ci95_low),
         "success_at_500_ci95_high": float(success_at_threshold_2_ci95_high),
+        "success_at_10_rate": success_at_threshold_3_rate,
+        "success_at_10_ci95_low": float(success_at_threshold_3_ci95_low),
+        "success_at_10_ci95_high": float(success_at_threshold_3_ci95_high),
+        "success_at_50_rate": success_at_threshold_4_rate,
+        "success_at_50_ci95_low": float(success_at_threshold_4_ci95_low),
+        "success_at_50_ci95_high": float(success_at_threshold_4_ci95_high),
+        "success_at_100_rate": success_at_threshold_5_rate,
+        "success_at_100_ci95_low": float(success_at_threshold_5_ci95_low),
+        "success_at_100_ci95_high": float(success_at_threshold_5_ci95_high),
         "avg_time_to_failure_steps": float(np.mean(failure_steps_arr)),
         "median_time_to_failure_steps": float(np.median(failure_steps_arr)),
         "max_time_to_failure_steps": float(np.max(failure_steps_arr)),
@@ -666,6 +708,15 @@ def main() -> None:
         "success_at_500_rate",
         "success_at_500_ci95_low",
         "success_at_500_ci95_high",
+        "success_at_10_rate",
+        "success_at_10_ci95_low",
+        "success_at_10_ci95_high",
+        "success_at_50_rate",
+        "success_at_50_ci95_low",
+        "success_at_50_ci95_high",
+        "success_at_100_rate",
+        "success_at_100_ci95_low",
+        "success_at_100_ci95_high",
         "avg_time_to_failure_steps",
         "median_time_to_failure_steps",
         "max_time_to_failure_steps",
@@ -720,6 +771,15 @@ def main() -> None:
                             "success_at_500_rate": float(row.get("success_at_500_rate", "0") or 0.0),
                             "success_at_500_ci95_low": float(row.get("success_at_500_ci95_low", "0") or 0.0),
                             "success_at_500_ci95_high": float(row.get("success_at_500_ci95_high", "0") or 0.0),
+                            "success_at_10_rate": float(row.get("success_at_10_rate", "0") or 0.0),
+                            "success_at_10_ci95_low": float(row.get("success_at_10_ci95_low", "0") or 0.0),
+                            "success_at_10_ci95_high": float(row.get("success_at_10_ci95_high", "0") or 0.0),
+                            "success_at_50_rate": float(row.get("success_at_50_rate", "0") or 0.0),
+                            "success_at_50_ci95_low": float(row.get("success_at_50_ci95_low", "0") or 0.0),
+                            "success_at_50_ci95_high": float(row.get("success_at_50_ci95_high", "0") or 0.0),
+                            "success_at_100_rate": float(row.get("success_at_100_rate", "0") or 0.0),
+                            "success_at_100_ci95_low": float(row.get("success_at_100_ci95_low", "0") or 0.0),
+                            "success_at_100_ci95_high": float(row.get("success_at_100_ci95_high", "0") or 0.0),
                             "avg_time_to_failure_steps": float(row.get("avg_time_to_failure_steps", "0") or 0.0),
                             "median_time_to_failure_steps": float(
                                 row.get("median_time_to_failure_steps", row.get("avg_time_to_failure_steps", "0")) or 0.0
@@ -890,6 +950,15 @@ def main() -> None:
                     "success_at_500_rate": eval_metrics["success_at_500_rate"],
                     "success_at_500_ci95_low": eval_metrics["success_at_500_ci95_low"],
                     "success_at_500_ci95_high": eval_metrics["success_at_500_ci95_high"],
+                    "success_at_10_rate": eval_metrics["success_at_10_rate"],
+                    "success_at_10_ci95_low": eval_metrics["success_at_10_ci95_low"],
+                    "success_at_10_ci95_high": eval_metrics["success_at_10_ci95_high"],
+                    "success_at_50_rate": eval_metrics["success_at_50_rate"],
+                    "success_at_50_ci95_low": eval_metrics["success_at_50_ci95_low"],
+                    "success_at_50_ci95_high": eval_metrics["success_at_50_ci95_high"],
+                    "success_at_100_rate": eval_metrics["success_at_100_rate"],
+                    "success_at_100_ci95_low": eval_metrics["success_at_100_ci95_low"],
+                    "success_at_100_ci95_high": eval_metrics["success_at_100_ci95_high"],
                     "avg_time_to_failure_steps": eval_metrics["avg_time_to_failure_steps"],
                     "median_time_to_failure_steps": eval_metrics["median_time_to_failure_steps"],
                     "max_time_to_failure_steps": eval_metrics["max_time_to_failure_steps"],
@@ -910,6 +979,18 @@ def main() -> None:
                         (
                             f"success(no reset) 95% CI=[{100.0 * eval_metrics['success_ci95_low']:.1f}%, "
                             f"{100.0 * eval_metrics['success_ci95_high']:.1f}%]"
+                        ),
+                        (
+                            f"success@{SUCCESS_STEPS_THRESHOLD_3}="
+                            f"{100.0 * eval_metrics['success_at_10_rate']:.1f}%"
+                        ),
+                        (
+                            f"success@{SUCCESS_STEPS_THRESHOLD_4}="
+                            f"{100.0 * eval_metrics['success_at_50_rate']:.1f}%"
+                        ),
+                        (
+                            f"success@{SUCCESS_STEPS_THRESHOLD_5}="
+                            f"{100.0 * eval_metrics['success_at_100_rate']:.1f}%"
                         ),
                         (
                             f"success@{SUCCESS_STEPS_THRESHOLD_1}="

@@ -57,6 +57,9 @@ def read_eval_rows(csv_path: pathlib.Path) -> list[dict[str, float]]:
                     "success_at_500_rate": get_float(row, "success_at_500_rate"),
                     "success_at_500_ci95_low": get_float(row, "success_at_500_ci95_low"),
                     "success_at_500_ci95_high": get_float(row, "success_at_500_ci95_high"),
+                    "success_at_10_rate": get_float(row, "success_at_10_rate"),
+                    "success_at_50_rate": get_float(row, "success_at_50_rate"),
+                    "success_at_100_rate": get_float(row, "success_at_100_rate"),
                     "avg_time_to_failure_steps": get_float(row, "avg_time_to_failure_steps"),
                     "median_time_to_failure_steps": get_float(row, "median_time_to_failure_steps"),
                     "max_time_to_failure_steps": get_float(row, "max_time_to_failure_steps"),
@@ -103,6 +106,9 @@ def main() -> None:
     success_at_500_pct = [100.0 * r["success_at_500_rate"] for r in rows]
     success_at_500_ci_low = [100.0 * r["success_at_500_ci95_low"] for r in rows]
     success_at_500_ci_high = [100.0 * r["success_at_500_ci95_high"] for r in rows]
+    success_at_10_pct = [100.0 * r["success_at_10_rate"] for r in rows]
+    success_at_50_pct = [100.0 * r["success_at_50_rate"] for r in rows]
+    success_at_100_pct = [100.0 * r["success_at_100_rate"] for r in rows]
     ttf = [r["avg_time_to_failure_steps"] for r in rows]
     median_ttf = [r["median_time_to_failure_steps"] for r in rows]
     max_ttf = [r["max_time_to_failure_steps"] for r in rows]
@@ -146,10 +152,32 @@ def main() -> None:
             label="@500 95% CI",
         )
 
+    if any(not math.isnan(v) for v in success_at_10_pct):
+        ax.plot(episodes, success_at_10_pct, label="Success @10", color="#e377c2", linestyle="-")
+    if any(not math.isnan(v) for v in success_at_50_pct):
+        ax.plot(episodes, success_at_50_pct, label="Success @50", color="#bcbd22", linestyle="-")
+    if any(not math.isnan(v) for v in success_at_100_pct):
+        ax.plot(episodes, success_at_100_pct, label="Success @100", color="#ff9896", linestyle="-")
+
+    max_success_value = max(
+        [0.0]
+        + [v for v in success_pct if not math.isnan(v)]
+        + [v for v in success_at_300_pct if not math.isnan(v)]
+        + [v for v in success_at_500_pct if not math.isnan(v)]
+        + [v for v in success_at_10_pct if not math.isnan(v)]
+        + [v for v in success_at_50_pct if not math.isnan(v)]
+        + [v for v in success_at_100_pct if not math.isnan(v)]
+        + [v for v in success_ci_high if not math.isnan(v)]
+        + [v for v in success_at_300_ci_high if not math.isnan(v)]
+        + [v for v in success_at_500_ci_high if not math.isnan(v)]
+    )
+    y_max = 100 if max_success_value > 30 else 30
+
     ax.set_title("Success Rate Trend")
     ax.set_xlabel("Episode")
     ax.set_ylabel("Success rate (%)")
-    ax.set_ylim(0, 100)
+    ax.set_ylim(0, y_max)
+    ax.set_yticks(list(range(0, int(y_max) + 1, 5)))
     ax.grid(True, alpha=0.3)
     ax.legend(loc="best")
 
