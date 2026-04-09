@@ -8,8 +8,8 @@ set -euo pipefail
 EMAIL="dnlong5@iastate.edu"
 ACCOUNT="s2026.se.4390.01"
 PARTITION="instruction"
-# Speed-first defaults for faster wall-clock throughput.
-EPISODES="2000"
+# Balanced defaults for stable learning + useful eval signal.
+EPISODES="3000"
 ENV_ID="InvertedTriplePendulum-v0"
 OUTPUT_DIR="artifacts"
 SEED="42"
@@ -19,15 +19,15 @@ LOG_INTERVAL_STEPS="1000"
 ACTOR_LR="0.0003"
 CRITIC_LR="0.001"
 BUFFER_CAPACITY="200000"
-BATCH_SIZE="1024"
-UPDATES_PER_STEP="4"
+BATCH_SIZE="512"
+UPDATES_PER_STEP="2"
 WARMUP_STEPS="4096"
-CHECKPOINT_INTERVAL_EPISODES="1"
-NOISE_START="0.3"
-NOISE_END="0.05"
-NOISE_DECAY_EPISODES="300"
-EVAL_EVERY_EPISODES="3"
-EVAL_EPISODES="2"
+CHECKPOINT_INTERVAL_EPISODES="5"
+NOISE_START="0.25"
+NOISE_END="0.10"
+NOISE_DECAY_EPISODES="2500"
+EVAL_EVERY_EPISODES="10"
+EVAL_EPISODES="10"
 EVAL_MAX_STEPS="1000"
 RESUME_ACTOR_WEIGHTS=""
 RESUME_EPISODE_OFFSET="-1"
@@ -191,13 +191,13 @@ Defaults in this file:
   EMAIL=dnlong5@iastate.edu
   ACCOUNT=s2026.se.4390.01
   PARTITION=instruction
-  EPISODES=1000
+  EPISODES=3000
 
 Optional overrides:
   --email       Email address for Slurm notifications
   --account     Slurm account (example: s2026.se.4390.01)
   --partition   Slurm partition (default: instruction)
-  --episodes    Number of DDPG training episodes (default: 1000)
+  --episodes    Number of DDPG training episodes (default: 3000)
   --env-id      Gymnasium environment id (default: InvertedTriplePendulum-v0)
   --output-dir  Training output directory (default: artifacts)
   --seed        Training random seed (default: 42)
@@ -207,14 +207,14 @@ Optional overrides:
   --actor-lr    Actor learning rate (default: 0.0003)
   --critic-lr   Critic learning rate (default: 0.001)
   --buffer-capacity Replay buffer capacity (default: 200000)
-  --batch-size  Replay sample batch size (default: 1024)
-  --updates-per-step Gradient updates per env step (default: 4)
+  --batch-size  Replay sample batch size (default: 512)
+  --updates-per-step Gradient updates per env step (default: 2)
   --warmup-steps Replay transitions to collect before training updates (default: 4096)
-  --checkpoint-interval-episodes Save actor checkpoint every N episodes (default: 1)
-  --noise-start Initial exploration noise stddev (default: 0.3)
-  --noise-end   Final exploration noise stddev (default: 0.05)
-  --noise-decay-episodes Episodes to decay exploration noise over (default: 300)
-  --eval-every-episodes Run deterministic eval every N episodes (default: 25, 0 disables)
+  --checkpoint-interval-episodes Save actor checkpoint every N episodes (default: 5)
+  --noise-start Initial exploration noise stddev (default: 0.25)
+  --noise-end   Final exploration noise stddev (default: 0.10)
+  --noise-decay-episodes Episodes to decay exploration noise over (default: 2500)
+  --eval-every-episodes Run deterministic eval every N episodes (default: 10, 0 disables)
   --eval-episodes Number of episodes per eval run (default: 10)
   --eval-max-steps Max steps per eval episode (default: 1000)
   --resume-actor-weights Path to actor weights file to continue from

@@ -18,6 +18,10 @@ bash scripts/submit_and_watch_hpc.sh --episodes 2000 --env-id InvertedTriplePend
 
 bash scripts/submit_resume_latest_hpc.sh --episodes 2000 --env-id InvertedTriplePendulum-v0
 
+# Fresh restart with tuned defaults (no resume):
+bash scripts/cancel_all_jobs.sh --force
+bash scripts/submit_and_watch_hpc.sh --env-id InvertedTriplePendulum-v0
+
 ssh dnlong5@nova.its.iastate.edu
 
 cd /work/classtmp/$USER
