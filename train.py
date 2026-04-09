@@ -329,6 +329,14 @@ def infer_episode_offset_from_weights(path_str: str) -> int | None:
     return int(match.group(1))
 
 
+def infer_run_stamp_from_weights(path_str: str) -> str | None:
+    file_name = pathlib.Path(path_str).name
+    match = re.search(r"_ep\d+_(\d{8}_\d{6})_", file_name)
+    if not match:
+        return None
+    return match.group(1)
+
+
 def run_deterministic_evaluation(
     actor_model: keras.Model,
     env_id: str,
@@ -630,6 +638,11 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    if resume_actor_weights:
+        resumed_run_stamp = infer_run_stamp_from_weights(resume_actor_weights)
+        if resumed_run_stamp:
+            run_stamp = resumed_run_stamp
+            print(f"Reusing run stamp from resumed checkpoint: {run_stamp}")
     env_slug = make_env_slug(resolved_env_id)
     eval_live_csv_name = f"model_pendulum_j{args.joints}_{run_stamp}_{env_slug}_eval_metrics.csv"
     eval_live_csv_path = output_dir / eval_live_csv_name
@@ -678,6 +691,51 @@ def main() -> None:
     best_eval_continuous_episode = -1
     best_actor_weights = None
     eval_rows: list[dict[str, float | int]] = []
+
+    if eval_live_csv_path.exists():
+        try:
+            with eval_live_csv_path.open("r", encoding="utf-8", newline="") as existing_handle:
+                reader = csv.DictReader(existing_handle)
+                for row in reader:
+                    if not row.get("episode"):
+                        continue
+                    eval_rows.append(
+                        {
+                            "episode": int(float(row.get("episode", "0"))),
+                            "mean_return": float(row.get("mean_return", "0") or 0.0),
+                            "median_return": float(row.get("median_return", "0") or 0.0),
+                            "return_std": float(row.get("return_std", "0") or 0.0),
+                            "return_stderr": float(row.get("return_stderr", "0") or 0.0),
+                            "return_ci95_low": float(row.get("return_ci95_low", "0") or 0.0),
+                            "return_ci95_high": float(row.get("return_ci95_high", "0") or 0.0),
+                            "success_rate": float(row.get("success_rate", "0") or 0.0),
+                            "success_ci95_low": float(row.get("success_ci95_low", "0") or 0.0),
+                            "success_ci95_high": float(row.get("success_ci95_high", "0") or 0.0),
+                            "success_no_reset_rate": float(row.get("success_no_reset_rate", row.get("success_rate", "0")) or 0.0),
+                            "success_no_reset_ci95_low": float(row.get("success_no_reset_ci95_low", row.get("success_ci95_low", "0")) or 0.0),
+                            "success_no_reset_ci95_high": float(row.get("success_no_reset_ci95_high", row.get("success_ci95_high", "0")) or 0.0),
+                            "success_at_300_rate": float(row.get("success_at_300_rate", "0") or 0.0),
+                            "success_at_300_ci95_low": float(row.get("success_at_300_ci95_low", "0") or 0.0),
+                            "success_at_300_ci95_high": float(row.get("success_at_300_ci95_high", "0") or 0.0),
+                            "success_at_500_rate": float(row.get("success_at_500_rate", "0") or 0.0),
+                            "success_at_500_ci95_low": float(row.get("success_at_500_ci95_low", "0") or 0.0),
+                            "success_at_500_ci95_high": float(row.get("success_at_500_ci95_high", "0") or 0.0),
+                            "avg_time_to_failure_steps": float(row.get("avg_time_to_failure_steps", "0") or 0.0),
+                            "median_time_to_failure_steps": float(
+                                row.get("median_time_to_failure_steps", row.get("avg_time_to_failure_steps", "0")) or 0.0
+                            ),
+                            "max_time_to_failure_steps": float(
+                                row.get("max_time_to_failure_steps", row.get("avg_time_to_failure_steps", "0")) or 0.0
+                            ),
+                            "avg_resets_per_episode": float(row.get("avg_resets_per_episode", "0") or 0.0),
+                            "eval_episodes": int(float(row.get("eval_episodes", str(args.eval_episodes)) or args.eval_episodes)),
+                            "eval_max_steps": int(float(row.get("eval_max_steps", str(args.eval_max_steps)) or args.eval_max_steps)),
+                        }
+                    )
+            if eval_rows:
+                print(f"Loaded {len(eval_rows)} existing eval rows from: {eval_live_csv_path}")
+        except Exception as exc:
+            print(f"Warning: could not load existing eval CSV {eval_live_csv_path}: {exc}", flush=True)
 
     def write_eval_metrics_csv(path: pathlib.Path) -> None:
         if not eval_rows:
