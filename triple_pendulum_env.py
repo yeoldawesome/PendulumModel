@@ -25,9 +25,12 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
         self.dt = 0.02
         self.gravity = 9.81
         self.step_count = 0
+        self.survival_streak = 0
 
-        # Balance-first shaping: maximize upright hold time rather than smoothness or return spikes.
+        # Balance-first shaping: maximize upright hold time with dense progress reward.
         self.terminal_penalty = 150.0
+        self.survival_bonus_interval = 25
+        self.survival_bonus_value = 0.12
 
         # Internal state: x, x_dot, theta1, theta2, theta3, theta1_dot, theta2_dot, theta3_dot
         self.state = np.zeros(8, dtype=np.float32)
@@ -78,6 +81,7 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
         # Start close to upright with a small randomized perturbation.
         self.state = self.np_random.normal(loc=0.0, scale=0.04, size=(8,)).astype(np.float32)
         self.step_count = 0
+        self.survival_streak = 0
         return self._get_obs(), {}
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
@@ -109,38 +113,27 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
 
         self.state = np.array([x, x_dot, t1, t2, t3, t1_dot, t2_dot, t3_dot], dtype=np.float32)
 
-        # Dense upright-survival reward bands:
-        # - tight upright zone gets high reward
-        # - loose upright zone gets moderate reward
-        # - outside gets slight penalty
-        tight_upright = (
-            abs(t1) < 0.20
-            and abs(t2) < 0.20
-            and abs(t3) < 0.20
-            and abs(x) < 0.60
-        )
-        loose_upright = (
-            abs(t1) < 0.50
-            and abs(t2) < 0.50
-            and abs(t3) < 0.50
-            and abs(x) < 1.20
-        )
+        # Hybrid reward: dense upright progress + centered cart + small streak milestone bonuses.
+        upright_score = (math.cos(t1) + math.cos(t2) + math.cos(t3)) / 3.0
+        reward = 0.9 * upright_score
+        reward -= 0.04 * abs(x)
 
+        tight_upright = abs(t1) < 0.25 and abs(t2) < 0.25 and abs(t3) < 0.25 and abs(x) < 0.8
         if tight_upright:
-            reward = 2.0
-        elif loose_upright:
-            reward = 0.5
-        else:
-            reward = -0.2
+            reward += 0.35
 
-        # Small positional drift penalty encourages staying centered while still prioritizing balance.
-        reward -= 0.03 * abs(x)
+        self.survival_streak += 1
+        if self.survival_streak % self.survival_bonus_interval == 0:
+            reward += self.survival_bonus_value
 
         terminated = bool(abs(x) > 2.4 or abs(t1) > 2.75 or abs(t2) > 2.75 or abs(t3) > 2.75)
         if terminated:
             reward -= self.terminal_penalty
+            self.survival_streak = 0
 
         truncated = self.step_count >= self.max_episode_steps
+        if truncated:
+            self.survival_streak = 0
         return self._get_obs(), reward, terminated, truncated, {}
 
     def render(self) -> np.ndarray | None:

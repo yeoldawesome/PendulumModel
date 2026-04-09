@@ -282,6 +282,37 @@ def parse_args() -> argparse.Namespace:
         help="Max steps per deterministic evaluation episode.",
     )
     parser.add_argument(
+        "--curriculum",
+        type=int,
+        default=1,
+        choices=[0, 1],
+        help="Use staged training horizon curriculum (1=on, 0=off).",
+    )
+    parser.add_argument(
+        "--curriculum-step-1",
+        type=int,
+        default=300,
+        help="Phase 1 per-episode max steps when curriculum is enabled.",
+    )
+    parser.add_argument(
+        "--curriculum-step-2",
+        type=int,
+        default=600,
+        help="Phase 2 per-episode max steps when curriculum is enabled.",
+    )
+    parser.add_argument(
+        "--curriculum-phase1-episodes",
+        type=int,
+        default=400,
+        help="Number of initial episodes in curriculum phase 1.",
+    )
+    parser.add_argument(
+        "--curriculum-phase2-episodes",
+        type=int,
+        default=1000,
+        help="Number of initial episodes in curriculum phase 2 (after phase 1).",
+    )
+    parser.add_argument(
         "--resume-actor-weights",
         type=str,
         default="",
@@ -601,6 +632,12 @@ def main() -> None:
         raise ValueError("--eval-episodes must be >= 1")
     if args.eval_max_steps < 1:
         raise ValueError("--eval-max-steps must be >= 1")
+    if args.curriculum_step_1 < 1 or args.curriculum_step_2 < 1:
+        raise ValueError("--curriculum-step-1 and --curriculum-step-2 must be >= 1")
+    if args.curriculum_phase1_episodes < 0 or args.curriculum_phase2_episodes < 0:
+        raise ValueError("--curriculum-phase1-episodes and --curriculum-phase2-episodes must be >= 0")
+    if args.curriculum_step_1 > args.curriculum_step_2:
+        raise ValueError("--curriculum-step-1 must be <= --curriculum-step-2")
     if args.resume_episode_offset < -1:
         raise ValueError("--resume-episode-offset must be >= -1")
     if args.noise_start < 0 or args.noise_end < 0:
@@ -665,6 +702,15 @@ def main() -> None:
     print(f"Eval every episodes: {args.eval_every_episodes}")
     print(f"Eval episodes: {args.eval_episodes}")
     print(f"Eval max steps: {args.eval_max_steps}")
+    print(
+        "Curriculum: "
+        + (
+            f"enabled (step1={args.curriculum_step_1}, step2={args.curriculum_step_2}, "
+            f"phase1_eps={args.curriculum_phase1_episodes}, phase2_eps={args.curriculum_phase2_episodes})"
+            if args.curriculum == 1
+            else "disabled"
+        )
+    )
     print(f"Save full artifacts: {args.save_full_artifacts}")
     print(f"Exploration noise: start={cfg.std_dev_start:.3f} end={cfg.std_dev_end:.3f} decay_episodes={cfg.std_dev_decay_episodes}")
     if resolved_env_id.startswith("InvertedDoublePendulum") and args.episodes < 200:
@@ -859,10 +905,21 @@ def main() -> None:
 
     total_env_steps = 0
     latest_checkpoint_path: pathlib.Path | None = None
+
+    def episode_step_limit(global_episode_number: int) -> int:
+        if args.curriculum != 1:
+            return cfg.max_steps_per_episode
+        if global_episode_number <= args.curriculum_phase1_episodes:
+            return min(cfg.max_steps_per_episode, args.curriculum_step_1)
+        if global_episode_number <= args.curriculum_phase2_episodes:
+            return min(cfg.max_steps_per_episode, args.curriculum_step_2)
+        return cfg.max_steps_per_episode
+
     for episode in range(cfg.total_episodes):
         global_episode = episode_offset + episode + 1
         total_episode_target = episode_offset + cfg.total_episodes
         print(f"Episode {global_episode:03d}/{total_episode_target}", flush=True)
+        current_max_steps = episode_step_limit(global_episode)
         episode_noise = linear_decay(global_episode - 1, cfg.std_dev_start, cfg.std_dev_end, cfg.std_dev_decay_episodes)
         noise.std_dev = episode_noise * np.ones(noise_shape, dtype=np.float32)
         if args.num_envs == 1:
@@ -875,9 +932,9 @@ def main() -> None:
         episode_reward = 0.0
         episode_steps = 0
         episode_rewards = np.zeros(args.num_envs, dtype=np.float32) if args.num_envs > 1 else None
-        progress = keras.utils.Progbar(cfg.max_steps_per_episode, stateful_metrics=["partial_reward"]) if args.progress_bar == 1 else None
+        progress = keras.utils.Progbar(current_max_steps, stateful_metrics=["partial_reward"]) if args.progress_bar == 1 else None
 
-        for step_idx in range(cfg.max_steps_per_episode):
+        for step_idx in range(current_max_steps):
             episode_steps = step_idx + 1
             if args.num_envs == 1:
                 action = choose_action(
@@ -948,7 +1005,7 @@ def main() -> None:
 
             if args.progress_bar == 0 and (step_idx + 1) % args.log_interval_steps == 0:
                 print(
-                    f"Episode {global_episode:03d}/{total_episode_target} | Step {step_idx + 1}/{cfg.max_steps_per_episode} | Partial reward: {partial_reward:.2f}",
+                    f"Episode {global_episode:03d}/{total_episode_target} | Step {step_idx + 1}/{current_max_steps} | Partial reward: {partial_reward:.2f}",
                     flush=True,
                 )
 
@@ -1177,6 +1234,11 @@ def main() -> None:
             "eval_every_episodes": args.eval_every_episodes,
             "eval_episodes": args.eval_episodes,
             "eval_max_steps": args.eval_max_steps,
+            "curriculum_enabled": bool(args.curriculum == 1),
+            "curriculum_step_1": args.curriculum_step_1,
+            "curriculum_step_2": args.curriculum_step_2,
+            "curriculum_phase1_episodes": args.curriculum_phase1_episodes,
+            "curriculum_phase2_episodes": args.curriculum_phase2_episodes,
             "best_eval_mean_return": best_eval_mean_return if best_eval_mean_return > float("-inf") else None,
             "best_eval_episode": best_eval_episode if best_eval_episode > 0 else None,
             "best_eval_balance_episode": best_eval_balance_episode if best_eval_balance_episode > 0 else None,

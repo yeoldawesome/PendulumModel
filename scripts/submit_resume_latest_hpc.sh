@@ -17,9 +17,9 @@ MATCH_ANY_ENV=0
 PRINT_ONLY=0
 SELECT_MODE="best-eval"
 USE_EXPLORATION_PROFILE=1
-EXPLORE_NOISE_START="0.20"
-EXPLORE_NOISE_END="0.08"
-EXPLORE_NOISE_DECAY_EPISODES="3000"
+EXPLORE_NOISE_START="0.12"
+EXPLORE_NOISE_END="0.03"
+EXPLORE_NOISE_DECAY_EPISODES="1200"
 
 usage() {
   cat <<EOF
@@ -32,11 +32,11 @@ Helper options:
   --no-exploration-profile
                        Disable default resume exploration tuning.
   --explore-noise-start VALUE
-                       Exploration profile noise-start (default: 0.20)
+                       Exploration profile noise-start (default: 0.12)
   --explore-noise-end VALUE
-                       Exploration profile noise-end (default: 0.08)
+                       Exploration profile noise-end (default: 0.03)
   --explore-noise-decay-episodes N
-                       Exploration profile noise-decay-episodes (default: 3000)
+                       Exploration profile noise-decay-episodes (default: 1200)
   --match-any-env       Do not filter by env slug when selecting checkpoints/CSV files
   --print-only          Print resolved command without submitting
   -h, --help            Show help

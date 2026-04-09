@@ -19,16 +19,21 @@ LOG_INTERVAL_STEPS="1000"
 ACTOR_LR="0.0003"
 CRITIC_LR="0.001"
 BUFFER_CAPACITY="200000"
-BATCH_SIZE="512"
-UPDATES_PER_STEP="2"
+BATCH_SIZE="256"
+UPDATES_PER_STEP="4"
 WARMUP_STEPS="4096"
 CHECKPOINT_INTERVAL_EPISODES="5"
-NOISE_START="0.25"
-NOISE_END="0.10"
-NOISE_DECAY_EPISODES="2500"
+NOISE_START="0.12"
+NOISE_END="0.03"
+NOISE_DECAY_EPISODES="1200"
 EVAL_EVERY_EPISODES="10"
 EVAL_EPISODES="10"
 EVAL_MAX_STEPS="1000"
+CURRICULUM="1"
+CURRICULUM_STEP_1="300"
+CURRICULUM_STEP_2="600"
+CURRICULUM_PHASE1_EPISODES="400"
+CURRICULUM_PHASE2_EPISODES="1000"
 RESUME_ACTOR_WEIGHTS=""
 RESUME_EPISODE_OFFSET="-1"
 GPUS="1"
@@ -135,6 +140,26 @@ while [[ $# -gt 0 ]]; do
       EVAL_MAX_STEPS="$2"
       shift 2
       ;;
+    --curriculum)
+      CURRICULUM="$2"
+      shift 2
+      ;;
+    --curriculum-step-1)
+      CURRICULUM_STEP_1="$2"
+      shift 2
+      ;;
+    --curriculum-step-2)
+      CURRICULUM_STEP_2="$2"
+      shift 2
+      ;;
+    --curriculum-phase1-episodes)
+      CURRICULUM_PHASE1_EPISODES="$2"
+      shift 2
+      ;;
+    --curriculum-phase2-episodes)
+      CURRICULUM_PHASE2_EPISODES="$2"
+      shift 2
+      ;;
     --resume-actor-weights)
       RESUME_ACTOR_WEIGHTS="$2"
       shift 2
@@ -207,16 +232,21 @@ Optional overrides:
   --actor-lr    Actor learning rate (default: 0.0003)
   --critic-lr   Critic learning rate (default: 0.001)
   --buffer-capacity Replay buffer capacity (default: 200000)
-  --batch-size  Replay sample batch size (default: 512)
-  --updates-per-step Gradient updates per env step (default: 2)
+  --batch-size  Replay sample batch size (default: 256)
+  --updates-per-step Gradient updates per env step (default: 4)
   --warmup-steps Replay transitions to collect before training updates (default: 4096)
   --checkpoint-interval-episodes Save actor checkpoint every N episodes (default: 5)
-  --noise-start Initial exploration noise stddev (default: 0.25)
-  --noise-end   Final exploration noise stddev (default: 0.10)
-  --noise-decay-episodes Episodes to decay exploration noise over (default: 2500)
+  --noise-start Initial exploration noise stddev (default: 0.12)
+  --noise-end   Final exploration noise stddev (default: 0.03)
+  --noise-decay-episodes Episodes to decay exploration noise over (default: 1200)
   --eval-every-episodes Run deterministic eval every N episodes (default: 10, 0 disables)
   --eval-episodes Number of episodes per eval run (default: 10)
   --eval-max-steps Max steps per eval episode (default: 1000)
+  --curriculum Enable staged horizon curriculum (1=on, 0=off; default: 1)
+  --curriculum-step-1 Per-episode max steps in phase 1 (default: 300)
+  --curriculum-step-2 Per-episode max steps in phase 2 (default: 600)
+  --curriculum-phase1-episodes Episode cutoff for phase 1 (default: 400)
+  --curriculum-phase2-episodes Episode cutoff for phase 2 (default: 1000)
   --resume-actor-weights Path to actor weights file to continue from
   --resume-episode-offset Episode offset for resumed run (-1 auto-infer from filename)
   --gpus        Number of A100 GPUs to request (default: 1)
@@ -292,6 +322,11 @@ echo "  noise-decay-episodes: $NOISE_DECAY_EPISODES"
 echo "  eval-every-episodes: $EVAL_EVERY_EPISODES"
 echo "  eval-episodes: $EVAL_EPISODES"
 echo "  eval-max-steps: $EVAL_MAX_STEPS"
+echo "  curriculum: $CURRICULUM"
+echo "  curriculum-step-1: $CURRICULUM_STEP_1"
+echo "  curriculum-step-2: $CURRICULUM_STEP_2"
+echo "  curriculum-phase1-episodes: $CURRICULUM_PHASE1_EPISODES"
+echo "  curriculum-phase2-episodes: $CURRICULUM_PHASE2_EPISODES"
 echo "  resume-actor-weights: ${RESUME_ACTOR_WEIGHTS:-<none>}"
 echo "  resume-episode-offset: $RESUME_EPISODE_OFFSET"
 echo "  output: $OUTPUT_DIR"
@@ -320,7 +355,7 @@ submit_output=$(sbatch \
   --cpus-per-task="$CPUS" \
   --mail-user="$EMAIL" \
   --mail-type=BEGIN,END,FAIL \
-  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",LOG_INTERVAL_STEPS="$LOG_INTERVAL_STEPS",ACTOR_LR="$ACTOR_LR",CRITIC_LR="$CRITIC_LR",BUFFER_CAPACITY="$BUFFER_CAPACITY",BATCH_SIZE="$BATCH_SIZE",UPDATES_PER_STEP="$UPDATES_PER_STEP",WARMUP_STEPS="$WARMUP_STEPS",CHECKPOINT_INTERVAL_EPISODES="$CHECKPOINT_INTERVAL_EPISODES",NOISE_START="$NOISE_START",NOISE_END="$NOISE_END",NOISE_DECAY_EPISODES="$NOISE_DECAY_EPISODES",EVAL_EVERY_EPISODES="$EVAL_EVERY_EPISODES",EVAL_EPISODES="$EVAL_EPISODES",EVAL_MAX_STEPS="$EVAL_MAX_STEPS",RESUME_ACTOR_WEIGHTS="$RESUME_ACTOR_WEIGHTS",RESUME_EPISODE_OFFSET="$RESUME_EPISODE_OFFSET",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
+  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",LOG_INTERVAL_STEPS="$LOG_INTERVAL_STEPS",ACTOR_LR="$ACTOR_LR",CRITIC_LR="$CRITIC_LR",BUFFER_CAPACITY="$BUFFER_CAPACITY",BATCH_SIZE="$BATCH_SIZE",UPDATES_PER_STEP="$UPDATES_PER_STEP",WARMUP_STEPS="$WARMUP_STEPS",CHECKPOINT_INTERVAL_EPISODES="$CHECKPOINT_INTERVAL_EPISODES",NOISE_START="$NOISE_START",NOISE_END="$NOISE_END",NOISE_DECAY_EPISODES="$NOISE_DECAY_EPISODES",EVAL_EVERY_EPISODES="$EVAL_EVERY_EPISODES",EVAL_EPISODES="$EVAL_EPISODES",EVAL_MAX_STEPS="$EVAL_MAX_STEPS",CURRICULUM="$CURRICULUM",CURRICULUM_STEP_1="$CURRICULUM_STEP_1",CURRICULUM_STEP_2="$CURRICULUM_STEP_2",CURRICULUM_PHASE1_EPISODES="$CURRICULUM_PHASE1_EPISODES",CURRICULUM_PHASE2_EPISODES="$CURRICULUM_PHASE2_EPISODES",RESUME_ACTOR_WEIGHTS="$RESUME_ACTOR_WEIGHTS",RESUME_EPISODE_OFFSET="$RESUME_EPISODE_OFFSET",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
   "$SCRIPT_PATH")
 
 echo "$submit_output"
