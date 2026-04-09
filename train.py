@@ -536,7 +536,8 @@ def main() -> None:
 
     run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     env_slug = make_env_slug(resolved_env_id)
-    artifact_prefix = f"model_pendulum_j{args.joints}_ep{cfg.total_episodes}_{run_stamp}_{env_slug}"
+    episodes_completed = len(episodic_rewards)
+    artifact_prefix = f"model_pendulum_j{args.joints}_ep{episodes_completed}_{run_stamp}_{env_slug}"
 
     actor_path = output_dir / f"{artifact_prefix}_actor.weights.h5"
     if best_actor_weights is not None:
@@ -564,7 +565,9 @@ def main() -> None:
             "env": resolved_env_id,
             "joints": args.joints,
             "seed": args.seed,
-            "episodes": cfg.total_episodes,
+            "episodes_requested": cfg.total_episodes,
+            "episodes_completed": episodes_completed,
+            "episodes": episodes_completed,
             "max_steps_per_episode": cfg.max_steps_per_episode,
             "num_envs": args.num_envs,
             "buffer_capacity": cfg.buffer_capacity,
