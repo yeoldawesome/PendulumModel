@@ -25,6 +25,9 @@ JOINTS_TO_ENV_ID = {
     3: TRIPLE_PENDULUM_ENV_ID,
 }
 
+SUCCESS_STEPS_THRESHOLD_1 = 300
+SUCCESS_STEPS_THRESHOLD_2 = 500
+
 
 @dataclass
 class DDPGConfig:
@@ -344,7 +347,9 @@ def run_deterministic_evaluation(
     returns: list[float] = []
     resets_per_episode: list[int] = []
     time_to_failure_steps: list[int] = []
-    success_flags: list[int] = []
+    success_no_reset_flags: list[int] = []
+    success_at_threshold_1_flags: list[int] = []
+    success_at_threshold_2_flags: list[int] = []
 
     try:
         for eval_idx in range(episodes):
@@ -370,14 +375,18 @@ def run_deterministic_evaluation(
             returns.append(total_reward)
             resets_per_episode.append(resets)
             time_to_failure_steps.append(first_failure_step)
-            success_flags.append(1 if resets == 0 else 0)
+            success_no_reset_flags.append(1 if resets == 0 else 0)
+            success_at_threshold_1_flags.append(1 if first_failure_step >= SUCCESS_STEPS_THRESHOLD_1 else 0)
+            success_at_threshold_2_flags.append(1 if first_failure_step >= SUCCESS_STEPS_THRESHOLD_2 else 0)
     finally:
         eval_env.close()
 
     returns_arr = np.asarray(returns, dtype=np.float32)
     resets_arr = np.asarray(resets_per_episode, dtype=np.float32)
     failure_steps_arr = np.asarray(time_to_failure_steps, dtype=np.float32)
-    success_arr = np.asarray(success_flags, dtype=np.float32)
+    success_no_reset_arr = np.asarray(success_no_reset_flags, dtype=np.float32)
+    success_at_threshold_1_arr = np.asarray(success_at_threshold_1_flags, dtype=np.float32)
+    success_at_threshold_2_arr = np.asarray(success_at_threshold_2_flags, dtype=np.float32)
 
     n = max(int(returns_arr.size), 1)
     mean_return = float(np.mean(returns_arr))
@@ -388,10 +397,24 @@ def run_deterministic_evaluation(
     return_ci95_low = mean_return - ci95_scale * stderr_return
     return_ci95_high = mean_return + ci95_scale * stderr_return
 
-    success_rate = float(np.mean(success_arr))
-    success_stderr = float(np.sqrt(success_rate * (1.0 - success_rate) / n)) if n > 1 else 0.0
-    success_ci95_low = max(0.0, success_rate - ci95_scale * success_stderr)
-    success_ci95_high = min(1.0, success_rate + ci95_scale * success_stderr)
+    success_no_reset_rate = float(np.mean(success_no_reset_arr))
+    success_no_reset_stderr = float(np.sqrt(success_no_reset_rate * (1.0 - success_no_reset_rate) / n)) if n > 1 else 0.0
+    success_no_reset_ci95_low = max(0.0, success_no_reset_rate - ci95_scale * success_no_reset_stderr)
+    success_no_reset_ci95_high = min(1.0, success_no_reset_rate + ci95_scale * success_no_reset_stderr)
+
+    success_at_threshold_1_rate = float(np.mean(success_at_threshold_1_arr))
+    success_at_threshold_1_stderr = (
+        float(np.sqrt(success_at_threshold_1_rate * (1.0 - success_at_threshold_1_rate) / n)) if n > 1 else 0.0
+    )
+    success_at_threshold_1_ci95_low = max(0.0, success_at_threshold_1_rate - ci95_scale * success_at_threshold_1_stderr)
+    success_at_threshold_1_ci95_high = min(1.0, success_at_threshold_1_rate + ci95_scale * success_at_threshold_1_stderr)
+
+    success_at_threshold_2_rate = float(np.mean(success_at_threshold_2_arr))
+    success_at_threshold_2_stderr = (
+        float(np.sqrt(success_at_threshold_2_rate * (1.0 - success_at_threshold_2_rate) / n)) if n > 1 else 0.0
+    )
+    success_at_threshold_2_ci95_low = max(0.0, success_at_threshold_2_rate - ci95_scale * success_at_threshold_2_stderr)
+    success_at_threshold_2_ci95_high = min(1.0, success_at_threshold_2_rate + ci95_scale * success_at_threshold_2_stderr)
 
     return {
         "eval_episodes": float(episodes),
@@ -401,10 +424,21 @@ def run_deterministic_evaluation(
         "return_stderr": stderr_return,
         "return_ci95_low": float(return_ci95_low),
         "return_ci95_high": float(return_ci95_high),
-        "success_rate": success_rate,
-        "success_ci95_low": float(success_ci95_low),
-        "success_ci95_high": float(success_ci95_high),
+        "success_rate": success_no_reset_rate,
+        "success_ci95_low": float(success_no_reset_ci95_low),
+        "success_ci95_high": float(success_no_reset_ci95_high),
+        "success_no_reset_rate": success_no_reset_rate,
+        "success_no_reset_ci95_low": float(success_no_reset_ci95_low),
+        "success_no_reset_ci95_high": float(success_no_reset_ci95_high),
+        "success_at_300_rate": success_at_threshold_1_rate,
+        "success_at_300_ci95_low": float(success_at_threshold_1_ci95_low),
+        "success_at_300_ci95_high": float(success_at_threshold_1_ci95_high),
+        "success_at_500_rate": success_at_threshold_2_rate,
+        "success_at_500_ci95_low": float(success_at_threshold_2_ci95_low),
+        "success_at_500_ci95_high": float(success_at_threshold_2_ci95_high),
         "avg_time_to_failure_steps": float(np.mean(failure_steps_arr)),
+        "median_time_to_failure_steps": float(np.median(failure_steps_arr)),
+        "max_time_to_failure_steps": float(np.max(failure_steps_arr)),
         "avg_resets_per_episode": float(np.mean(resets_arr)),
     }
 
@@ -610,7 +644,18 @@ def main() -> None:
         "success_rate",
         "success_ci95_low",
         "success_ci95_high",
+        "success_no_reset_rate",
+        "success_no_reset_ci95_low",
+        "success_no_reset_ci95_high",
+        "success_at_300_rate",
+        "success_at_300_ci95_low",
+        "success_at_300_ci95_high",
+        "success_at_500_rate",
+        "success_at_500_ci95_low",
+        "success_at_500_ci95_high",
         "avg_time_to_failure_steps",
+        "median_time_to_failure_steps",
+        "max_time_to_failure_steps",
         "avg_resets_per_episode",
         "eval_episodes",
         "eval_max_steps",
@@ -629,6 +674,8 @@ def main() -> None:
     best_train_episode = -1
     best_eval_mean_return = float("-inf")
     best_eval_episode = -1
+    best_eval_continuous_steps = float("-inf")
+    best_eval_continuous_episode = -1
     best_actor_weights = None
     eval_rows: list[dict[str, float | int]] = []
 
@@ -776,7 +823,18 @@ def main() -> None:
                     "success_rate": eval_metrics["success_rate"],
                     "success_ci95_low": eval_metrics["success_ci95_low"],
                     "success_ci95_high": eval_metrics["success_ci95_high"],
+                    "success_no_reset_rate": eval_metrics["success_no_reset_rate"],
+                    "success_no_reset_ci95_low": eval_metrics["success_no_reset_ci95_low"],
+                    "success_no_reset_ci95_high": eval_metrics["success_no_reset_ci95_high"],
+                    "success_at_300_rate": eval_metrics["success_at_300_rate"],
+                    "success_at_300_ci95_low": eval_metrics["success_at_300_ci95_low"],
+                    "success_at_300_ci95_high": eval_metrics["success_at_300_ci95_high"],
+                    "success_at_500_rate": eval_metrics["success_at_500_rate"],
+                    "success_at_500_ci95_low": eval_metrics["success_at_500_ci95_low"],
+                    "success_at_500_ci95_high": eval_metrics["success_at_500_ci95_high"],
                     "avg_time_to_failure_steps": eval_metrics["avg_time_to_failure_steps"],
+                    "median_time_to_failure_steps": eval_metrics["median_time_to_failure_steps"],
+                    "max_time_to_failure_steps": eval_metrics["max_time_to_failure_steps"],
                     "avg_resets_per_episode": eval_metrics["avg_resets_per_episode"],
                     "eval_episodes": int(eval_metrics["eval_episodes"]),
                     "eval_max_steps": args.eval_max_steps,
@@ -790,17 +848,38 @@ def main() -> None:
                         f"mean={eval_metrics['mean_return']:.2f}",
                         f"median={eval_metrics['median_return']:.2f}",
                         f"95% CI=[{eval_metrics['return_ci95_low']:.2f}, {eval_metrics['return_ci95_high']:.2f}]",
-                        f"success={100.0 * eval_metrics['success_rate']:.1f}%",
+                        f"success(no reset)={100.0 * eval_metrics['success_rate']:.1f}%",
                         (
-                            f"success 95% CI=[{100.0 * eval_metrics['success_ci95_low']:.1f}%, "
+                            f"success(no reset) 95% CI=[{100.0 * eval_metrics['success_ci95_low']:.1f}%, "
                             f"{100.0 * eval_metrics['success_ci95_high']:.1f}%]"
                         ),
+                        (
+                            f"success@{SUCCESS_STEPS_THRESHOLD_1}="
+                            f"{100.0 * eval_metrics['success_at_300_rate']:.1f}%"
+                        ),
+                        (
+                            f"success@{SUCCESS_STEPS_THRESHOLD_2}="
+                            f"{100.0 * eval_metrics['success_at_500_rate']:.1f}%"
+                        ),
                         f"avg time-to-failure={eval_metrics['avg_time_to_failure_steps']:.1f}",
+                        f"median time-to-failure={eval_metrics['median_time_to_failure_steps']:.1f}",
+                        f"max time-to-failure={eval_metrics['max_time_to_failure_steps']:.1f}",
                         f"avg resets={eval_metrics['avg_resets_per_episode']:.2f}",
                     ]
                 ),
                 flush=True,
             )
+
+            if eval_metrics["avg_time_to_failure_steps"] > best_eval_continuous_steps:
+                best_eval_continuous_steps = eval_metrics["avg_time_to_failure_steps"]
+                best_eval_continuous_episode = global_episode
+                print(
+                    (
+                        "New best checkpoint by avg continuous balance: "
+                        f"episode {global_episode} ({best_eval_continuous_steps:.1f} steps)"
+                    ),
+                    flush=True,
+                )
 
             if eval_metrics["mean_return"] > best_eval_mean_return:
                 best_eval_mean_return = eval_metrics["mean_return"]
@@ -886,6 +965,10 @@ def main() -> None:
             "eval_max_steps": args.eval_max_steps,
             "best_eval_mean_return": best_eval_mean_return if best_eval_mean_return > float("-inf") else None,
             "best_eval_episode": best_eval_episode if best_eval_episode > 0 else None,
+            "best_eval_avg_time_to_failure_steps": (
+                best_eval_continuous_steps if best_eval_continuous_steps > float("-inf") else None
+            ),
+            "best_eval_avg_time_to_failure_episode": best_eval_continuous_episode if best_eval_continuous_episode > 0 else None,
             "visible_gpus": len(gpus),
             "final_avg_reward_40": rolling_avg_rewards[-1] if rolling_avg_rewards else None,
             "final_eval_mean_return": eval_rows[-1]["mean_return"] if eval_rows else None,
