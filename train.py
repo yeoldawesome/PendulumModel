@@ -37,6 +37,8 @@ class DDPGConfig:
     buffer_capacity: int = 200000
     batch_size: int = 128
     max_steps_per_episode: int = 2000
+    updates_per_step: int = 1
+    warmup_steps: int = 0
 
 
 class OUActionNoise:
@@ -220,6 +222,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--noise-end", type=float, default=0.05, help="Final exploration noise stddev.")
     parser.add_argument("--noise-decay-episodes", type=int, default=300, help="Episodes over which exploration noise decays.")
     parser.add_argument(
+        "--updates-per-step",
+        type=int,
+        default=4,
+        help="Number of gradient updates to run per environment step after warmup.",
+    )
+    parser.add_argument(
+        "--warmup-steps",
+        type=int,
+        default=4096,
+        help="Number of collected transitions before starting gradient updates.",
+    )
+    parser.add_argument(
         "--save-full-artifacts",
         type=int,
         default=0,
@@ -301,6 +315,10 @@ def main() -> None:
         raise ValueError("--batch-size must be >= 1")
     if args.buffer_capacity < args.batch_size:
         raise ValueError("--buffer-capacity must be >= --batch-size")
+    if args.updates_per_step < 1:
+        raise ValueError("--updates-per-step must be >= 1")
+    if args.warmup_steps < 0:
+        raise ValueError("--warmup-steps must be >= 0")
     if args.noise_start < 0 or args.noise_end < 0:
         raise ValueError("--noise-start and --noise-end must be >= 0")
     if args.render and args.num_envs > 1:
@@ -317,6 +335,8 @@ def main() -> None:
         std_dev_end=args.noise_end,
         std_dev_decay_episodes=args.noise_decay_episodes,
         max_steps_per_episode=args.max_steps_per_episode,
+        updates_per_step=args.updates_per_step,
+        warmup_steps=args.warmup_steps,
     )
 
     set_seed(args.seed)
@@ -353,6 +373,8 @@ def main() -> None:
     print(f"Critic lr: {cfg.critic_lr}")
     print(f"Replay capacity: {cfg.buffer_capacity}")
     print(f"Batch size: {cfg.batch_size}")
+    print(f"Updates per step: {cfg.updates_per_step}")
+    print(f"Warmup steps: {cfg.warmup_steps}")
     print(f"Save full artifacts: {args.save_full_artifacts}")
     print(f"Exploration noise: start={cfg.std_dev_start:.3f} end={cfg.std_dev_end:.3f} decay_episodes={cfg.std_dev_decay_episodes}")
     if resolved_env_id.startswith("InvertedDoublePendulum") and args.episodes < 200:
@@ -392,6 +414,7 @@ def main() -> None:
     best_avg_reward = float("-inf")
     best_episode = -1
     best_actor_weights = None
+    total_env_steps = 0
     for episode in range(cfg.total_episodes):
         print(f"Episode {episode + 1:03d}/{cfg.total_episodes} started", flush=True)
         episode_noise = linear_decay(episode, cfg.std_dev_start, cfg.std_dev_end, cfg.std_dev_decay_episodes)
@@ -421,6 +444,7 @@ def main() -> None:
                 state, reward, terminated, truncated, _ = env.step(action)
                 replay_buffer.record(prev_state, action, float(reward), state)
                 episode_reward += float(reward)
+                total_env_steps += 1
             else:
                 actions = choose_actions_batch(
                     states=prev_state,
@@ -433,25 +457,27 @@ def main() -> None:
                 state, reward, terminated, truncated, _ = env.step(actions)
                 replay_buffer.record_batch(prev_state, actions, reward, state)
                 episode_rewards += reward.astype(np.float32)
+                total_env_steps += args.num_envs
 
-            if replay_buffer.can_sample():
-                state_batch, action_batch, reward_batch, next_state_batch = replay_buffer.sample()
-                train_step(
-                    state_batch=state_batch,
-                    action_batch=action_batch,
-                    reward_batch=reward_batch,
-                    next_state_batch=next_state_batch,
-                    actor_model=actor_model,
-                    critic_model=critic_model,
-                    target_actor=target_actor,
-                    target_critic=target_critic,
-                    actor_optimizer=actor_optimizer,
-                    critic_optimizer=critic_optimizer,
-                    gamma=cfg.gamma,
-                )
+            if replay_buffer.can_sample() and replay_buffer.size() >= cfg.warmup_steps:
+                for _ in range(cfg.updates_per_step):
+                    state_batch, action_batch, reward_batch, next_state_batch = replay_buffer.sample()
+                    train_step(
+                        state_batch=state_batch,
+                        action_batch=action_batch,
+                        reward_batch=reward_batch,
+                        next_state_batch=next_state_batch,
+                        actor_model=actor_model,
+                        critic_model=critic_model,
+                        target_actor=target_actor,
+                        target_critic=target_critic,
+                        actor_optimizer=actor_optimizer,
+                        critic_optimizer=critic_optimizer,
+                        gamma=cfg.gamma,
+                    )
 
-                update_targets(target_actor, actor_model, cfg.tau)
-                update_targets(target_critic, critic_model, cfg.tau)
+                    update_targets(target_actor, actor_model, cfg.tau)
+                    update_targets(target_critic, critic_model, cfg.tau)
 
             if args.num_envs == 1:
                 if terminated or truncated:
@@ -528,6 +554,8 @@ def main() -> None:
             "noise_start": cfg.std_dev_start,
             "noise_end": cfg.std_dev_end,
             "noise_decay_episodes": cfg.std_dev_decay_episodes,
+            "updates_per_step": cfg.updates_per_step,
+            "warmup_steps": cfg.warmup_steps,
             "gamma": cfg.gamma,
             "tau": cfg.tau,
             "actor_lr": cfg.actor_lr,

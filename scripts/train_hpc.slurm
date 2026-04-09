@@ -47,6 +47,8 @@ ACTOR_LR="${ACTOR_LR:-0.0003}"
 CRITIC_LR="${CRITIC_LR:-0.001}"
 BUFFER_CAPACITY="${BUFFER_CAPACITY:-200000}"
 BATCH_SIZE="${BATCH_SIZE:-128}"
+UPDATES_PER_STEP="${UPDATES_PER_STEP:-4}"
+WARMUP_STEPS="${WARMUP_STEPS:-4096}"
 NOISE_START="${NOISE_START:-0.3}"
 NOISE_END="${NOISE_END:-0.05}"
 NOISE_DECAY_EPISODES="${NOISE_DECAY_EPISODES:-300}"
@@ -184,6 +186,8 @@ echo "Actor lr: $ACTOR_LR"
 echo "Critic lr: $CRITIC_LR"
 echo "Replay capacity: $BUFFER_CAPACITY"
 echo "Batch size: $BATCH_SIZE"
+echo "Updates per step: $UPDATES_PER_STEP"
+echo "Warmup steps: $WARMUP_STEPS"
 echo "Noise start/end/decay: $NOISE_START / $NOISE_END / $NOISE_DECAY_EPISODES"
 echo "Seed: $SEED"
 echo "Output dir: $OUTPUT_DIR"
@@ -224,6 +228,8 @@ srun python3 train.py \
   --critic-lr "$CRITIC_LR" \
   --buffer-capacity "$BUFFER_CAPACITY" \
   --batch-size "$BATCH_SIZE" \
+  --updates-per-step "$UPDATES_PER_STEP" \
+  --warmup-steps "$WARMUP_STEPS" \
   --noise-start "$NOISE_START" \
   --noise-end "$NOISE_END" \
   --noise-decay-episodes "$NOISE_DECAY_EPISODES" \
