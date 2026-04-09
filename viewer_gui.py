@@ -4,6 +4,7 @@ import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import re
+from typing import Any
 
 import os
 
@@ -41,19 +42,24 @@ class PendulumViewerApp(tk.Tk):
 
         self.model_var = tk.StringVar()
         self.model_b_var = tk.StringVar()
+        self.model_c_var = tk.StringVar()
+        self.model_d_var = tk.StringVar()
         self.env_id_var = tk.StringVar(value=TRIPLE_PENDULUM_ENV_ID)
-        self.episodes_var = tk.StringVar(value="3")
-        self.max_steps_var = tk.StringVar(value="200")
-        self.frame_delay_ms_var = tk.StringVar(value="300")
+        self.episodes_var = tk.StringVar(value="10")
+        self.max_steps_var = tk.StringVar(value="1000")
+        self.frame_delay_ms_var = tk.StringVar(value="10")
         self.seed_var = tk.StringVar(value="42")
         self.start_episode_var = tk.StringVar(value="1")
         self.use_2d_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="Ready")
+        self.compare_stats_var = tk.StringVar(value="")
+        self.compare_plot_data: dict[str, Any] | None = None
 
         self.sim_window: tk.Toplevel | None = None
         self.sim_canvas: tk.Canvas | None = None
         self.sim_canvas_left: tk.Canvas | None = None
         self.sim_canvas_right: tk.Canvas | None = None
+        self.sim_compare_canvases: list[tk.Canvas] = []
 
         self._build_ui()
         self.refresh_models()
@@ -86,6 +92,14 @@ class PendulumViewerApp(tk.Tk):
             return int(match.group(1))
         except ValueError:
             return None
+
+    @staticmethod
+    def _label_from_model_path(model_path: str) -> str:
+        name = pathlib.Path(model_path).name
+        match = re.search(r"_ep(\d+)_", name)
+        if match:
+            return f"ep{match.group(1)}"
+        return pathlib.Path(model_path).stem
 
     def _detect_model_compatible_env(self, model_path: str, preferred_env_id: str | None = None) -> tuple[str | None, str | None]:
         supported_envs = [TRIPLE_PENDULUM_ENV_ID, "InvertedDoublePendulum-v5", "Pendulum-v1"]
@@ -158,28 +172,42 @@ class PendulumViewerApp(tk.Tk):
         browse_b_btn = ttk.Button(container, text="Browse B...", command=self.browse_model_b)
         browse_b_btn.grid(row=3, column=3, sticky="ew", pady=(8, 0))
 
+        ttk.Label(container, text="Actor model C (compare):").grid(row=4, column=0, sticky="w", pady=(8, 0))
+        self.model_c_combo = ttk.Combobox(container, textvariable=self.model_c_var, width=70, state="readonly")
+        self.model_c_combo.grid(row=4, column=1, columnspan=2, sticky="ew", padx=(8, 8), pady=(8, 0))
+
+        browse_c_btn = ttk.Button(container, text="Browse C...", command=self.browse_model_c)
+        browse_c_btn.grid(row=4, column=3, sticky="ew", pady=(8, 0))
+
+        ttk.Label(container, text="Actor model D (compare):").grid(row=5, column=0, sticky="w", pady=(8, 0))
+        self.model_d_combo = ttk.Combobox(container, textvariable=self.model_d_var, width=70, state="readonly")
+        self.model_d_combo.grid(row=5, column=1, columnspan=2, sticky="ew", padx=(8, 8), pady=(8, 0))
+
+        browse_d_btn = ttk.Button(container, text="Browse D...", command=self.browse_model_d)
+        browse_d_btn.grid(row=5, column=3, sticky="ew", pady=(8, 0))
+
         refresh_btn = ttk.Button(container, text="Refresh Artifacts", command=self.refresh_models)
-        refresh_btn.grid(row=4, column=3, sticky="ew", pady=(8, 0))
+        refresh_btn.grid(row=6, column=3, sticky="ew", pady=(8, 0))
 
-        ttk.Label(container, text="Episodes:").grid(row=4, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(container, textvariable=self.episodes_var, width=10).grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        ttk.Label(container, text="Episodes:").grid(row=6, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.episodes_var, width=10).grid(row=6, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(container, text="Max steps:").grid(row=4, column=1, sticky="e", pady=(8, 0))
-        ttk.Entry(container, textvariable=self.max_steps_var, width=10).grid(row=4, column=2, sticky="w", pady=(8, 0))
+        ttk.Label(container, text="Max steps:").grid(row=6, column=1, sticky="e", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.max_steps_var, width=10).grid(row=6, column=2, sticky="w", pady=(8, 0))
 
-        ttk.Label(container, text="Frame delay (ms):").grid(row=5, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(container, textvariable=self.frame_delay_ms_var, width=10).grid(row=5, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        ttk.Label(container, text="Frame delay (ms):").grid(row=7, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.frame_delay_ms_var, width=10).grid(row=7, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
 
-        ttk.Label(container, text="Seed:").grid(row=5, column=2, sticky="e", pady=(8, 0))
-        ttk.Entry(container, textvariable=self.seed_var, width=10).grid(row=5, column=3, sticky="w", pady=(8, 0))
+        ttk.Label(container, text="Seed:").grid(row=7, column=2, sticky="e", pady=(8, 0))
+        ttk.Entry(container, textvariable=self.seed_var, width=10).grid(row=7, column=3, sticky="w", pady=(8, 0))
 
-        ttk.Label(container, text="Replay episodes:").grid(row=6, column=2, sticky="e", pady=(8, 0))
-        ttk.Label(container, text="1 (single saved model)").grid(row=6, column=3, sticky="w", pady=(8, 0))
+        ttk.Label(container, text="Replay episodes:").grid(row=8, column=2, sticky="e", pady=(8, 0))
+        ttk.Label(container, text="1 (single saved model)").grid(row=8, column=3, sticky="w", pady=(8, 0))
 
-        ttk.Checkbutton(container, text="Use 2D visualizer", variable=self.use_2d_var).grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ttk.Checkbutton(container, text="Use 2D visualizer", variable=self.use_2d_var).grid(row=8, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         buttons = ttk.Frame(container)
-        buttons.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(16, 8))
+        buttons.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(16, 8))
         buttons.columnconfigure((0, 1, 2, 3), weight=1)
 
         self.run_model_btn = ttk.Button(buttons, text="Run Loaded Model", command=self.run_loaded_model)
@@ -188,23 +216,46 @@ class PendulumViewerApp(tk.Tk):
         self.run_random_btn = ttk.Button(buttons, text="Run Random Policy", command=self.run_random_policy)
         self.run_random_btn.grid(row=0, column=1, sticky="ew", padx=(0, 8))
 
-        self.run_compare_btn = ttk.Button(buttons, text="Run Side-by-Side Models", command=self.run_side_by_side_models)
+        self.run_compare_btn = ttk.Button(buttons, text="Run Compare Models (2-4)", command=self.run_side_by_side_models)
         self.run_compare_btn.grid(row=0, column=2, sticky="ew", padx=(0, 8))
 
         self.stop_btn = ttk.Button(buttons, text="Stop", command=self.stop_run, state=tk.DISABLED)
         self.stop_btn.grid(row=0, column=3, sticky="ew")
 
-        ttk.Label(container, text="Episode rewards:").grid(row=8, column=0, columnspan=4, sticky="w")
+        log_header = ttk.Frame(container)
+        log_header.grid(row=10, column=0, columnspan=4, sticky="ew")
+        log_header.columnconfigure(0, weight=1)
 
-        self.results = tk.Listbox(container, height=12)
-        self.results.grid(row=9, column=0, columnspan=4, sticky="nsew", pady=(6, 8))
+        ttk.Label(log_header, text="Episode rewards:").grid(row=0, column=0, sticky="w")
+
+        copy_btn = ttk.Button(log_header, text="Copy Console", command=self._copy_log_to_clipboard)
+        copy_btn.grid(row=0, column=1, sticky="e", padx=(8, 0))
+
+        clear_btn = ttk.Button(log_header, text="Clear Console", command=self._clear_log)
+        clear_btn.grid(row=0, column=2, sticky="e", padx=(8, 0))
+
+        plot_btn = ttk.Button(log_header, text="Plot Compare Stats", command=self._plot_compare_stats)
+        plot_btn.grid(row=0, column=3, sticky="e", padx=(8, 0))
+
+        log_frame = ttk.Frame(container)
+        log_frame.grid(row=11, column=0, columnspan=4, sticky="nsew", pady=(6, 8))
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
+
+        self.results = tk.Text(log_frame, height=12, wrap="none", state="disabled")
+        self.results.grid(row=0, column=0, sticky="nsew")
+        self.results.bind("<Control-a>", self._select_all_log)
+
+        log_scroll_y = ttk.Scrollbar(log_frame, orient="vertical", command=self.results.yview)
+        log_scroll_y.grid(row=0, column=1, sticky="ns")
+        self.results.configure(yscrollcommand=log_scroll_y.set)
 
         status = ttk.Label(container, textvariable=self.status_var)
-        status.grid(row=10, column=0, columnspan=4, sticky="w")
+        status.grid(row=12, column=0, columnspan=4, sticky="w")
 
         container.columnconfigure(1, weight=1)
         container.columnconfigure(2, weight=1)
-        container.rowconfigure(9, weight=1)
+        container.rowconfigure(11, weight=1)
 
     def refresh_models(self) -> None:
         artifacts_dir = pathlib.Path("artifacts")
@@ -217,13 +268,21 @@ class PendulumViewerApp(tk.Tk):
         model_paths = [str(path) for path in candidates]
         self.model_combo["values"] = model_paths
         self.model_b_combo["values"] = model_paths
+        self.model_c_combo["values"] = model_paths
+        self.model_d_combo["values"] = model_paths
         if model_paths and self.model_var.get() not in model_paths:
             self.model_var.set(model_paths[0])
         if model_paths and self.model_b_var.get() not in model_paths:
             self.model_b_var.set(model_paths[0])
+        if model_paths and self.model_c_var.get() not in model_paths:
+            self.model_c_var.set("")
+        if model_paths and self.model_d_var.get() not in model_paths:
+            self.model_d_var.set("")
         if not model_paths:
             self.model_var.set("")
             self.model_b_var.set("")
+            self.model_c_var.set("")
+            self.model_d_var.set("")
         self.status_var.set(f"Found {len(model_paths)} actor model(s) in artifacts")
 
     def browse_model(self) -> None:
@@ -244,15 +303,34 @@ class PendulumViewerApp(tk.Tk):
             filetypes=[("Keras weights", "*.weights.h5"), ("All files", "*.*")],
         )
         if selected:
-            current_values = list(self.model_b_combo["values"])
+            self._register_selected_model(selected)
+            self.model_b_var.set(selected)
+
+    def browse_model_c(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select actor weights (model C)",
+            filetypes=[("Keras weights", "*.weights.h5"), ("All files", "*.*")],
+        )
+        if selected:
+            self._register_selected_model(selected)
+            self.model_c_var.set(selected)
+
+    def browse_model_d(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select actor weights (model D)",
+            filetypes=[("Keras weights", "*.weights.h5"), ("All files", "*.*")],
+        )
+        if selected:
+            self._register_selected_model(selected)
+            self.model_d_var.set(selected)
+
+    def _register_selected_model(self, selected: str) -> None:
+        combos = [self.model_combo, self.model_b_combo, self.model_c_combo, self.model_d_combo]
+        for combo in combos:
+            current_values = list(combo["values"])
             if selected not in current_values:
                 current_values.append(selected)
-                self.model_b_combo["values"] = current_values
-            current_values_a = list(self.model_combo["values"])
-            if selected not in current_values_a:
-                current_values_a.append(selected)
-                self.model_combo["values"] = current_values_a
-            self.model_b_var.set(selected)
+                combo["values"] = current_values
 
     def run_loaded_model(self) -> None:
         model_path = self.model_var.get().strip()
@@ -302,45 +380,63 @@ class PendulumViewerApp(tk.Tk):
         self.start_run(use_model=False)
 
     def run_side_by_side_models(self) -> None:
-        model_a = self.model_var.get().strip()
-        model_b = self.model_b_var.get().strip()
-        if not model_a or not model_b:
-            messagebox.showerror("Missing model", "Select both model A and model B weights files first.")
+        selected_models = [
+            self.model_var.get().strip(),
+            self.model_b_var.get().strip(),
+            self.model_c_var.get().strip(),
+            self.model_d_var.get().strip(),
+        ]
+        model_paths = [path for path in selected_models if path]
+        if len(model_paths) < 2:
+            messagebox.showerror("Missing model", "Select at least two models (A/B/C/D) for comparison.")
             return
-        if model_a == model_b:
-            messagebox.showwarning("Same model selected", "Choose two different model files for side-by-side comparison.")
+        if len(model_paths) > 4:
+            messagebox.showerror("Too many models", "Compare supports up to 4 models.")
             return
-        if not pathlib.Path(model_a).exists() or not pathlib.Path(model_b).exists():
-            messagebox.showerror("Missing model", "One or both selected model files do not exist.")
+
+        unique_paths = list(dict.fromkeys(model_paths))
+        if len(unique_paths) != len(model_paths):
+            messagebox.showwarning("Duplicate models", "Choose distinct model files when comparing.")
+            return
+
+        missing_models = [path for path in model_paths if not pathlib.Path(path).exists()]
+        if missing_models:
+            messagebox.showerror("Missing model", f"These model files do not exist: {', '.join(missing_models)}")
             return
         if not bool(self.use_2d_var.get()):
-            messagebox.showerror("2D required", "Side-by-side comparison currently requires 'Use 2D visualizer' enabled.")
+            messagebox.showerror("2D required", "Multi-model comparison requires 'Use 2D visualizer' enabled.")
             return
 
         preferred_env = self.env_id_var.get().strip() or TRIPLE_PENDULUM_ENV_ID
-        env_a, reason_a = self._detect_model_compatible_env(model_a, preferred_env_id=preferred_env)
-        env_b, reason_b = self._detect_model_compatible_env(model_b, preferred_env_id=preferred_env)
+        resolved_envs: list[str] = []
+        for idx, model_path in enumerate(model_paths):
+            env_match, reason = self._detect_model_compatible_env(model_path, preferred_env_id=preferred_env)
+            if env_match is None:
+                messagebox.showerror(
+                    "Incompatible model",
+                    f"Model {idx + 1} could not be loaded in supported envs. Details: {reason or 'unknown'}",
+                )
+                return
+            resolved_envs.append(env_match)
 
-        if env_a is None:
-            messagebox.showerror("Incompatible model A", f"Model A could not be loaded in supported envs. Details: {reason_a or 'unknown'}")
-            return
-        if env_b is None:
-            messagebox.showerror("Incompatible model B", f"Model B could not be loaded in supported envs. Details: {reason_b or 'unknown'}")
-            return
-        if env_a != env_b:
+        env_set = set(resolved_envs)
+        if len(env_set) != 1:
             messagebox.showerror(
                 "Env mismatch",
-                f"Model A resolves to {env_a} while model B resolves to {env_b}. Choose models trained for the same environment.",
+                "Selected models resolve to different environments. Choose models trained for the same environment.",
             )
             return
 
-        self.env_id_var.set(env_a)
-        self.start_compare_run(model_a=model_a, model_b=model_b, env_id=env_a)
+        resolved_env = resolved_envs[0]
+        self.env_id_var.set(resolved_env)
+        self.start_compare_run(model_paths=model_paths, env_id=resolved_env)
 
     def start_run(self, use_model: bool) -> None:
         if self.runner_thread and self.runner_thread.is_alive():
             messagebox.showwarning("Already running", "An episode run is already in progress.")
             return
+
+        self.compare_plot_data = None
 
         try:
             episodes = int(self.episodes_var.get())
@@ -377,10 +473,12 @@ class PendulumViewerApp(tk.Tk):
         )
         self.runner_thread.start()
 
-    def start_compare_run(self, model_a: str, model_b: str, env_id: str) -> None:
+    def start_compare_run(self, model_paths: list[str], env_id: str) -> None:
         if self.runner_thread and self.runner_thread.is_alive():
             messagebox.showwarning("Already running", "An episode run is already in progress.")
             return
+
+        self.compare_plot_data = None
 
         try:
             episodes = int(self.episodes_var.get())
@@ -408,8 +506,7 @@ class PendulumViewerApp(tk.Tk):
                 "frame_delay_ms": frame_delay_ms,
                 "seed": seed,
                 "start_episode": start_episode,
-                "model_a_path": model_a,
-                "model_b_path": model_b,
+                "model_paths": model_paths,
                 "env_id": env_id,
             },
             daemon=True,
@@ -427,15 +524,124 @@ class PendulumViewerApp(tk.Tk):
         self.stop_btn.configure(state=tk.NORMAL if running else tk.DISABLED)
 
     def _append_result(self, episode_idx: int, reward: float) -> None:
-        self.results.insert(tk.END, f"Episode {episode_idx:03d} | Reward: {reward:.2f}")
-        self.results.see(tk.END)
+        self._append_log_line(f"Episode {episode_idx:03d} | Reward: {reward:.2f}")
 
     def _append_compare_result(self, episode_idx: int, reward_a: float, reward_b: float) -> None:
-        self.results.insert(
-            tk.END,
-            f"Episode {episode_idx:03d} | Model A: {reward_a:.2f} | Model B: {reward_b:.2f} | Delta(A-B): {reward_a - reward_b:.2f}",
+        self._append_log_line(
+            f"Episode {episode_idx:03d} | Model A: {reward_a:.2f} | Model B: {reward_b:.2f} | Delta(A-B): {reward_a - reward_b:.2f}"
         )
+
+    def _append_compare_result_with_stats(
+        self,
+        episode_idx: int,
+        model_summaries: list[str],
+    ) -> None:
+        self._append_log_line(f"Episode {episode_idx:03d} | " + " | ".join(model_summaries))
+
+    def _append_log_line(self, line: str) -> None:
+        self.results.configure(state="normal")
+        self.results.insert(tk.END, line + "\n")
         self.results.see(tk.END)
+        self.results.configure(state="disabled")
+
+    def _select_all_log(self, _event: tk.Event) -> str:
+        self.results.tag_add("sel", "1.0", tk.END)
+        self.results.mark_set("insert", "1.0")
+        self.results.see("insert")
+        return "break"
+
+    def _copy_log_to_clipboard(self) -> None:
+        text = self.results.get("1.0", tk.END).strip()
+        if not text:
+            return
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.status_var.set("Console copied to clipboard")
+
+    def _clear_log(self) -> None:
+        self.results.configure(state="normal")
+        self.results.delete("1.0", tk.END)
+        self.results.configure(state="disabled")
+        self.status_var.set("Console cleared")
+
+    def _plot_compare_stats(self) -> None:
+        if not self.compare_plot_data:
+            messagebox.showinfo("No compare data", "Run a compare session first to generate stats.")
+            return
+
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            messagebox.showerror("Missing dependency", "matplotlib is required to plot compare stats.")
+            return
+
+        labels = self.compare_plot_data["labels"]
+        reward_histories = self.compare_plot_data["reward_histories"]
+        balance_histories = self.compare_plot_data["balance_histories"]
+        best_streak_histories = self.compare_plot_data["best_streak_histories"]
+        reset_histories = self.compare_plot_data["reset_histories"]
+
+        episodes = list(range(1, len(reward_histories[0]) + 1))
+        fig, axes = plt.subplots(2, 2, figsize=(13, 8), constrained_layout=True)
+
+        for idx, label in enumerate(labels):
+            axes[0][0].plot(episodes, reward_histories[idx], label=label)
+            axes[0][1].plot(episodes, balance_histories[idx], label=label)
+            axes[1][0].plot(episodes, best_streak_histories[idx], label=label)
+            axes[1][1].plot(episodes, reset_histories[idx], label=label)
+
+        axes[0][0].set_title("Episode Reward")
+        axes[0][0].set_xlabel("Episode")
+        axes[0][0].set_ylabel("Reward")
+        axes[0][0].grid(True, alpha=0.3)
+        axes[0][0].legend(loc="best")
+
+        axes[0][1].set_title("Balance Time (First Failure Step)")
+        axes[0][1].set_xlabel("Episode")
+        axes[0][1].set_ylabel("Steps")
+        axes[0][1].grid(True, alpha=0.3)
+        axes[0][1].legend(loc="best")
+
+        axes[1][0].set_title("Best Continuous Streak")
+        axes[1][0].set_xlabel("Episode")
+        axes[1][0].set_ylabel("Steps")
+        axes[1][0].grid(True, alpha=0.3)
+        axes[1][0].legend(loc="best")
+
+        axes[1][1].set_title("Resets Per Episode")
+        axes[1][1].set_xlabel("Episode")
+        axes[1][1].set_ylabel("Resets")
+        axes[1][1].grid(True, alpha=0.3)
+        axes[1][1].legend(loc="best")
+
+        plt.show()
+
+    @staticmethod
+    def _build_compare_summary_text(
+        labels: list[str],
+        reward_histories: list[list[float]],
+        balance_histories: list[list[int]],
+        best_streak_histories: list[list[int]],
+        reset_histories: list[list[int]],
+    ) -> str:
+        if not labels or any(not hist for hist in reward_histories):
+            return ""
+
+        avg_rewards = [float(np.mean(hist)) for hist in reward_histories]
+        leader_idx = int(np.argmax(avg_rewards))
+        lines: list[str] = [f"Leader by avg reward: {labels[leader_idx]} ({avg_rewards[leader_idx]:.1f})"]
+
+        for idx, label in enumerate(labels):
+            lines.append(
+                (
+                    f"{label}: avgR={np.mean(reward_histories[idx]):.1f}, "
+                    f"avg/best balance={np.mean(balance_histories[idx]):.1f}/{np.max(balance_histories[idx])}, "
+                    f"avg best streak={np.mean(best_streak_histories[idx]):.1f}, "
+                    f"avg resets={np.mean(reset_histories[idx]):.2f}"
+                )
+            )
+
+        return " | ".join(lines)
 
     def _open_2d_window(self, env_id: str) -> None:
         if self.sim_window is not None and self.sim_window.winfo_exists():
@@ -449,29 +655,45 @@ class PendulumViewerApp(tk.Tk):
         self.sim_canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         self.sim_canvas_left = None
         self.sim_canvas_right = None
+        self.sim_compare_canvases = []
 
-    def _open_2d_compare_window(self, env_id: str, model_a_label: str, model_b_label: str) -> None:
+    def _open_2d_compare_window(self, env_id: str, model_labels: list[str]) -> None:
         if self.sim_window is not None and self.sim_window.winfo_exists():
             self.sim_window.destroy()
 
         self.sim_window = tk.Toplevel(self)
-        self.sim_window.title(f"2D Side-by-Side - {env_id}")
-        self.sim_window.geometry("1400x620")
+        self.sim_window.title(f"2D Multi-Model Compare - {env_id}")
+        self.sim_window.geometry("1460x840")
 
         frame = ttk.Frame(self.sim_window, padding=8)
         frame.pack(fill=tk.BOTH, expand=True)
-        frame.columnconfigure(0, weight=1)
-        frame.columnconfigure(1, weight=1)
-        frame.rowconfigure(1, weight=1)
+        for col_idx in range(2):
+            frame.columnconfigure(col_idx, weight=1)
+        for row_idx in range(4):
+            frame.rowconfigure(row_idx, weight=1)
 
-        ttk.Label(frame, text=f"Model A: {model_a_label}", anchor="w").grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        ttk.Label(frame, text=f"Model B: {model_b_label}", anchor="w").grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        self.sim_compare_canvases = []
+        for idx, label in enumerate(model_labels):
+            row_base = (idx // 2) * 2
+            col = idx % 2
+            ttk.Label(frame, text=f"{label}", anchor="w").grid(row=row_base, column=col, sticky="ew", padx=6)
+            canvas = tk.Canvas(frame, width=680, height=320, bg="white")
+            canvas.grid(row=row_base + 1, column=col, sticky="nsew", padx=6, pady=(4, 8))
+            self.sim_compare_canvases.append(canvas)
 
-        self.sim_canvas_left = tk.Canvas(frame, width=680, height=540, bg="white")
-        self.sim_canvas_left.grid(row=1, column=0, sticky="nsew", padx=(0, 6), pady=(6, 0))
+        # Keep legacy fields unset in multi-compare mode.
+        self.sim_canvas_left = None
+        self.sim_canvas_right = None
 
-        self.sim_canvas_right = tk.Canvas(frame, width=680, height=540, bg="white")
-        self.sim_canvas_right.grid(row=1, column=1, sticky="nsew", padx=(6, 0), pady=(6, 0))
+        self.compare_stats_var.set("Comparison stats will appear here as episodes complete.")
+        compare_stats_label = ttk.Label(
+            frame,
+            textvariable=self.compare_stats_var,
+            anchor="w",
+            justify="left",
+            wraplength=1420,
+        )
+        compare_stats_label.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
         self.sim_canvas = None
 
@@ -597,17 +819,16 @@ class PendulumViewerApp(tk.Tk):
     def _draw_2d_compare_states(
         self,
         env_id: str,
-        state_a: np.ndarray,
-        state_b: np.ndarray,
+        states: list[np.ndarray],
         episode_idx: int,
         step_idx: int,
     ) -> None:
         if self.sim_window is None or not self.sim_window.winfo_exists():
             return
-        if self.sim_canvas_left is None or self.sim_canvas_right is None:
+        if not self.sim_compare_canvases:
             return
-        self._draw_2d_state_on_canvas(self.sim_canvas_left, env_id, state_a, episode_idx, step_idx)
-        self._draw_2d_state_on_canvas(self.sim_canvas_right, env_id, state_b, episode_idx, step_idx)
+        for canvas, state in zip(self.sim_compare_canvases, states):
+            self._draw_2d_state_on_canvas(canvas, env_id, state, episode_idx, step_idx)
 
     def _run_compare_episodes(
         self,
@@ -616,39 +837,38 @@ class PendulumViewerApp(tk.Tk):
         frame_delay_ms: int,
         seed: int,
         start_episode: int,
-        model_a_path: str,
-        model_b_path: str,
+        model_paths: list[str],
         env_id: str,
     ) -> None:
-        env_a = None
-        env_b = None
+        envs: list[gym.Env] = []
         try:
             register_triple_pendulum_env()
-            env_a = gym.make(env_id)
-            env_b = gym.make(env_id)
+            for _ in model_paths:
+                envs.append(gym.make(env_id))
 
-            if not isinstance(env_a.action_space, gym.spaces.Box) or not isinstance(env_b.action_space, gym.spaces.Box):
+            if any(not isinstance(env.action_space, gym.spaces.Box) for env in envs):
                 raise ValueError("Selected environment must use a continuous Box action space.")
 
-            num_states = env_a.observation_space.shape[0]
-            num_actions = env_a.action_space.shape[0]
-            upper_bound = env_a.action_space.high.astype(np.float32)
-            lower_bound = env_a.action_space.low.astype(np.float32)
+            ref_env = envs[0]
+            num_states = ref_env.observation_space.shape[0]
+            num_actions = ref_env.action_space.shape[0]
+            upper_bound = ref_env.action_space.high.astype(np.float32)
+            lower_bound = ref_env.action_space.low.astype(np.float32)
 
-            actor_a = get_actor(num_states=num_states, num_actions=num_actions, upper_bound=upper_bound)
-            actor_b = get_actor(num_states=num_states, num_actions=num_actions, upper_bound=upper_bound)
-            actor_a(np.zeros((1, num_states), dtype=np.float32), training=False)
-            actor_b(np.zeros((1, num_states), dtype=np.float32), training=False)
-            actor_a.load_weights(model_a_path)
-            actor_b.load_weights(model_b_path)
-
-            model_a_label = pathlib.Path(model_a_path).name
-            model_b_label = pathlib.Path(model_b_path).name
+            actors: list[tf.keras.Model] = []
+            model_labels = [pathlib.Path(path).name for path in model_paths]
+            model_short_labels = [self._label_from_model_path(path) for path in model_paths]
+            for model_path in model_paths:
+                actor = get_actor(num_states=num_states, num_actions=num_actions, upper_bound=upper_bound)
+                actor(np.zeros((1, num_states), dtype=np.float32), training=False)
+                actor.load_weights(model_path)
+                actors.append(actor)
 
             window_ready = threading.Event()
 
             def init_window() -> None:
-                self._open_2d_compare_window(env_id, model_a_label=model_a_label, model_b_label=model_b_label)
+                labeled_models = [f"{name}: {label}" for name, label in zip(model_short_labels, model_labels)]
+                self._open_2d_compare_window(env_id, model_labels=labeled_models)
                 window_ready.set()
 
             self.after(0, init_window)
@@ -657,49 +877,100 @@ class PendulumViewerApp(tk.Tk):
             self.after(
                 0,
                 self.status_var.set,
-                f"Running {episodes} side-by-side episode(s) in {env_id} from episode {start_episode}...",
+                f"Running {episodes} compare episode(s) across {len(model_paths)} models in {env_id} from episode {start_episode}...",
             )
+
+            reward_histories: list[list[float]] = [[] for _ in model_paths]
+            balance_histories: list[list[int]] = [[] for _ in model_paths]
+            best_streak_histories: list[list[int]] = [[] for _ in model_paths]
+            reset_histories: list[list[int]] = [[] for _ in model_paths]
 
             for local_idx in range(episodes):
                 if self.stop_event.is_set():
                     break
 
                 episode_idx = start_episode + local_idx
-                state_a, _ = env_a.reset(seed=seed + episode_idx - 1)
-                state_b, _ = env_b.reset(seed=seed + episode_idx - 1)
-                episode_reward_a = 0.0
-                episode_reward_b = 0.0
+                states: list[np.ndarray] = []
+                for model_idx, env in enumerate(envs):
+                    state, _ = env.reset(seed=seed + episode_idx - 1 + model_idx * 10000)
+                    states.append(state)
 
-                self.after(0, self._draw_2d_compare_states, env_id, state_a.copy(), state_b.copy(), episode_idx, 0)
+                episode_rewards = [0.0 for _ in model_paths]
+                first_failures = [max_steps for _ in model_paths]
+                resets = [0 for _ in model_paths]
+                current_streaks = [0 for _ in model_paths]
+                best_streaks = [0 for _ in model_paths]
+
+                self.after(0, self._draw_2d_compare_states, env_id, [state.copy() for state in states], episode_idx, 0)
 
                 for step_idx in range(max_steps):
                     if self.stop_event.is_set():
                         break
 
-                    state_a_tensor = tf.convert_to_tensor(state_a[np.newaxis, :], dtype=tf.float32)
-                    state_b_tensor = tf.convert_to_tensor(state_b[np.newaxis, :], dtype=tf.float32)
-                    action_a = tf.squeeze(actor_a(state_a_tensor, training=False), axis=0).numpy()
-                    action_b = tf.squeeze(actor_b(state_b_tensor, training=False), axis=0).numpy()
+                    for model_idx, (actor, env) in enumerate(zip(actors, envs)):
+                        state_tensor = tf.convert_to_tensor(states[model_idx][np.newaxis, :], dtype=tf.float32)
+                        action = tf.squeeze(actor(state_tensor, training=False), axis=0).numpy()
+                        action = np.clip(action, lower_bound, upper_bound).astype(np.float32)
 
-                    action_a = np.clip(action_a, lower_bound, upper_bound).astype(np.float32)
-                    action_b = np.clip(action_b, lower_bound, upper_bound).astype(np.float32)
+                        next_state, reward, terminated, truncated, _ = env.step(action)
+                        states[model_idx] = next_state
+                        episode_rewards[model_idx] += float(reward)
+                        current_streaks[model_idx] += 1
 
-                    state_a, reward_a, terminated_a, truncated_a, _ = env_a.step(action_a)
-                    state_b, reward_b, terminated_b, truncated_b, _ = env_b.step(action_b)
+                        if terminated or truncated:
+                            if first_failures[model_idx] == max_steps:
+                                first_failures[model_idx] = step_idx + 1
+                            resets[model_idx] += 1
+                            best_streaks[model_idx] = max(best_streaks[model_idx], current_streaks[model_idx])
+                            current_streaks[model_idx] = 0
+                            reset_seed = seed + episode_idx * 100000 + step_idx + 1 + model_idx * 1000000
+                            states[model_idx], _ = env.reset(seed=reset_seed)
 
-                    episode_reward_a += float(reward_a)
-                    episode_reward_b += float(reward_b)
-
-                    self.after(0, self._draw_2d_compare_states, env_id, state_a.copy(), state_b.copy(), episode_idx, step_idx + 1)
+                    self.after(0, self._draw_2d_compare_states, env_id, [state.copy() for state in states], episode_idx, step_idx + 1)
                     if frame_delay_ms > 0:
                         time.sleep(frame_delay_ms / 1000.0)
 
-                    if terminated_a or truncated_a:
-                        state_a, _ = env_a.reset(seed=seed + episode_idx * 100000 + step_idx + 1)
-                    if terminated_b or truncated_b:
-                        state_b, _ = env_b.reset(seed=seed + episode_idx * 200000 + step_idx + 1)
+                for model_idx in range(len(model_paths)):
+                    best_streaks[model_idx] = max(best_streaks[model_idx], current_streaks[model_idx])
+                    reward_histories[model_idx].append(episode_rewards[model_idx])
+                    balance_histories[model_idx].append(first_failures[model_idx])
+                    best_streak_histories[model_idx].append(best_streaks[model_idx])
+                    reset_histories[model_idx].append(resets[model_idx])
 
-                self.after(0, self._append_compare_result, episode_idx, episode_reward_a, episode_reward_b)
+                summary_text = self._build_compare_summary_text(
+                    labels=model_short_labels,
+                    reward_histories=reward_histories,
+                    balance_histories=balance_histories,
+                    best_streak_histories=best_streak_histories,
+                    reset_histories=reset_histories,
+                )
+
+                episode_summaries = []
+                for model_idx, model_name in enumerate(model_short_labels):
+                    episode_summaries.append(
+                        (
+                            f"{model_name}: R={episode_rewards[model_idx]:.2f}, "
+                            f"Bal={first_failures[model_idx]}, "
+                            f"BestStreak={best_streaks[model_idx]}, "
+                            f"Resets={resets[model_idx]}"
+                        )
+                    )
+
+                self.after(
+                    0,
+                    self._append_compare_result_with_stats,
+                    episode_idx,
+                    episode_summaries,
+                )
+                self.after(0, self.compare_stats_var.set, summary_text)
+
+                self.compare_plot_data = {
+                    "labels": model_short_labels.copy(),
+                    "reward_histories": [hist.copy() for hist in reward_histories],
+                    "balance_histories": [hist.copy() for hist in balance_histories],
+                    "best_streak_histories": [hist.copy() for hist in best_streak_histories],
+                    "reset_histories": [hist.copy() for hist in reset_histories],
+                }
 
             if self.stop_event.is_set():
                 self.after(0, self.status_var.set, "Stopped")
@@ -709,10 +980,8 @@ class PendulumViewerApp(tk.Tk):
             self.after(0, messagebox.showerror, "Run error", str(exc))
             self.after(0, self.status_var.set, "Error")
         finally:
-            if env_a is not None:
-                env_a.close()
-            if env_b is not None:
-                env_b.close()
+            for env in envs:
+                env.close()
             self.after(0, self._set_running_state, False)
 
     def _run_episodes(
