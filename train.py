@@ -213,6 +213,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-steps-per-episode", type=int, default=2000, help="Maximum environment steps per episode.")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environment instances for faster simulation.")
     parser.add_argument("--log-interval-steps", type=int, default=500, help="Print in-episode progress every N steps.")
+    parser.add_argument(
+        "--progress-bar",
+        type=int,
+        default=1,
+        choices=[0, 1],
+        help="Show a per-episode progress bar (1) or interval-based logging (0).",
+    )
     parser.add_argument("--actor-lr", type=float, default=0.0003, help="Actor learning rate.")
     parser.add_argument("--critic-lr", type=float, default=0.001, help="Critic learning rate.")
     parser.add_argument("--tau", type=float, default=0.002, help="Target network update factor.")
@@ -369,6 +376,7 @@ def main() -> None:
     print(f"Action bounds: low={lower_bound} high={upper_bound}")
     print(f"Parallel envs: {args.num_envs}")
     print(f"Log interval steps: {args.log_interval_steps}")
+    print(f"Progress bar: {args.progress_bar}")
     print(f"Actor lr: {cfg.actor_lr}")
     print(f"Critic lr: {cfg.critic_lr}")
     print(f"Replay capacity: {cfg.buffer_capacity}")
@@ -416,7 +424,7 @@ def main() -> None:
     best_actor_weights = None
     total_env_steps = 0
     for episode in range(cfg.total_episodes):
-        print(f"Episode {episode + 1:03d}/{cfg.total_episodes} started", flush=True)
+        print(f"Episode {episode + 1:03d}/{cfg.total_episodes}", flush=True)
         episode_noise = linear_decay(episode, cfg.std_dev_start, cfg.std_dev_end, cfg.std_dev_decay_episodes)
         noise.std_dev = episode_noise * np.ones(noise_shape, dtype=np.float32)
         if args.num_envs == 1:
@@ -429,6 +437,7 @@ def main() -> None:
         episode_reward = 0.0
         episode_steps = 0
         episode_rewards = np.zeros(args.num_envs, dtype=np.float32) if args.num_envs > 1 else None
+        progress = keras.utils.Progbar(cfg.max_steps_per_episode, stateful_metrics=["partial_reward"]) if args.progress_bar == 1 else None
 
         for step_idx in range(cfg.max_steps_per_episode):
             episode_steps = step_idx + 1
@@ -459,6 +468,19 @@ def main() -> None:
                 episode_rewards += reward.astype(np.float32)
                 total_env_steps += args.num_envs
 
+            if args.num_envs == 1:
+                partial_reward = episode_reward
+            else:
+                partial_reward = float(np.mean(episode_rewards)) if episode_rewards is not None else 0.0
+
+            if progress is not None:
+                progress.update(
+                    step_idx + 1,
+                    values=[
+                        ("partial_reward", partial_reward),
+                    ],
+                )
+
             if replay_buffer.can_sample() and replay_buffer.size() >= cfg.warmup_steps:
                 for _ in range(cfg.updates_per_step):
                     state_batch, action_batch, reward_batch, next_state_batch = replay_buffer.sample()
@@ -486,11 +508,7 @@ def main() -> None:
             else:
                 prev_state = state
 
-            if (step_idx + 1) % args.log_interval_steps == 0:
-                if args.num_envs == 1:
-                    partial_reward = episode_reward
-                else:
-                    partial_reward = float(np.mean(episode_rewards)) if episode_rewards is not None else 0.0
+            if args.progress_bar == 0 and (step_idx + 1) % args.log_interval_steps == 0:
                 print(
                     f"Episode {episode + 1:03d}/{cfg.total_episodes} | Step {step_idx + 1}/{cfg.max_steps_per_episode} | Partial reward: {partial_reward:.2f}",
                     flush=True,
