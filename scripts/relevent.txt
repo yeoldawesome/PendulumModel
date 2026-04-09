@@ -47,5 +47,8 @@ Find the real filename with: ls artifacts/*ep335*actor.weights.h5
 HPC (force offset manually if filename does not include episode number):
 bash scripts/submit_and_watch_hpc.sh --episodes 2000 --env-id InvertedTriplePendulum-v0 --resume-actor-weights artifacts/YOUR_ACTOR.weights.h5 --resume-episode-offset 335
 
+HPC (auto-pick highest episode checkpoint so you do not paste filenames each time):
+bash scripts/submit_resume_latest_hpc.sh --episodes 2000 --env-id InvertedTriplePendulum-v0
+
 Local Windows PowerShell:
 Set-Location "c:/Users/dnlon/Downloads/Ai-Class/PendulumModel"; & "c:/Users/dnlon/Downloads/Ai-Class/PendulumModel/.venv/Scripts/python.exe" train.py --episodes 200 --env-id InvertedTriplePendulum-v0 --resume-actor-weights "artifacts/model_pendulum_j3_ep335_YYYYMMDD_HHMMSS_invertedtriplependulum_v0_actor.weights.h5"
