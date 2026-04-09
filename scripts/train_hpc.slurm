@@ -37,7 +37,7 @@ export PYTHONUNBUFFERED=1
 export TF_CPP_MIN_LOG_LEVEL=2
 
 EPISODES="${EPISODES:-500}"
-ENV_ID="${ENV_ID:-InvertedDoublePendulum-v5}"
+ENV_ID="${ENV_ID:-InvertedTriplePendulum-v0}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts}"
 SEED="${SEED:-42}"
 MAX_STEPS_PER_EPISODE="${MAX_STEPS_PER_EPISODE:-2000}"

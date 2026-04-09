@@ -15,8 +15,17 @@ import numpy as np
 import tensorflow as tf
 
 from train import get_actor
+from triple_pendulum_env import TRIPLE_PENDULUM_ENV_ID, register_triple_pendulum_env
 
 tf.get_logger().setLevel("ERROR")
+
+JOINTS_TO_ENV_ID = {
+    1: "Pendulum-v1",
+    2: "InvertedDoublePendulum-v5",
+    3: TRIPLE_PENDULUM_ENV_ID,
+}
+
+ENV_ID_TO_JOINTS = {env_id: joints for joints, env_id in JOINTS_TO_ENV_ID.items()}
 
 
 class PendulumViewerApp(tk.Tk):
@@ -25,11 +34,13 @@ class PendulumViewerApp(tk.Tk):
         self.title("Control Model Viewer")
         self.geometry("760x520")
 
+        register_triple_pendulum_env()
+
         self.stop_event = threading.Event()
         self.runner_thread: threading.Thread | None = None
 
         self.model_var = tk.StringVar()
-        self.env_id_var = tk.StringVar(value="Pendulum-v1")
+        self.env_id_var = tk.StringVar(value=TRIPLE_PENDULUM_ENV_ID)
         self.episodes_var = tk.StringVar(value="3")
         self.max_steps_var = tk.StringVar(value="200")
         self.frame_delay_ms_var = tk.StringVar(value="300")
@@ -62,8 +73,22 @@ class PendulumViewerApp(tk.Tk):
             return "weights shape mismatch"
         return "error"
 
-    def _detect_model_compatible_env(self, model_path: str) -> tuple[str | None, str | None]:
-        supported_envs = ("Pendulum-v1", "InvertedDoublePendulum-v5")
+    @staticmethod
+    def _guess_joints_from_model_path(model_path: str) -> int | None:
+        name = pathlib.Path(model_path).name.lower()
+        match = re.search(r"_j(\d+)_", name)
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
+    def _detect_model_compatible_env(self, model_path: str, preferred_env_id: str | None = None) -> tuple[str | None, str | None]:
+        supported_envs = [TRIPLE_PENDULUM_ENV_ID, "InvertedDoublePendulum-v5", "Pendulum-v1"]
+        if preferred_env_id in supported_envs:
+            supported_envs.remove(preferred_env_id)
+            supported_envs.insert(0, preferred_env_id)
         errors: list[str] = []
 
         for candidate_env_id in supported_envs:
@@ -112,7 +137,7 @@ class PendulumViewerApp(tk.Tk):
             container,
             textvariable=self.env_id_var,
             width=40,
-            values=("Pendulum-v1", "InvertedDoublePendulum-v5"),
+            values=(TRIPLE_PENDULUM_ENV_ID, "InvertedDoublePendulum-v5", "Pendulum-v1"),
         )
         env_combo.grid(row=1, column=1, columnspan=2, sticky="w", padx=(8, 8))
 
@@ -205,25 +230,32 @@ class PendulumViewerApp(tk.Tk):
             messagebox.showerror("Missing model", "Selected model file does not exist.")
             return
 
-        compatible_env_id, reason = self._detect_model_compatible_env(model_path)
+        guessed_joints = self._guess_joints_from_model_path(model_path)
+        preferred_env_id = JOINTS_TO_ENV_ID.get(guessed_joints) if guessed_joints is not None else None
+        compatible_env_id, reason = self._detect_model_compatible_env(model_path, preferred_env_id=preferred_env_id)
         if compatible_env_id is None:
             details = reason or "unknown mismatch"
             if "MuJoCo not installed" in details and "weights shape mismatch" in details:
                 details = (
-                    "Model does not match Pendulum-v1, and InvertedDoublePendulum-v5 is unavailable because MuJoCo is missing. "
+                    f"Model does not match {TRIPLE_PENDULUM_ENV_ID} or Pendulum-v1, and InvertedDoublePendulum-v5 is unavailable because MuJoCo is missing. "
                     "Install with: pip install \"gymnasium[mujoco]\""
                 )
             elif "MuJoCo not installed" in details:
                 details = "InvertedDoublePendulum-v5 is unavailable because MuJoCo is missing. Install with: pip install \"gymnasium[mujoco]\""
             messagebox.showerror(
                 "Incompatible model",
-                "This model does not match supported viewer environments (Pendulum-v1 or InvertedDoublePendulum-v5). "
+                f"This model does not match supported viewer environments ({TRIPLE_PENDULUM_ENV_ID}, InvertedDoublePendulum-v5, or Pendulum-v1). "
                 f"Details: {details}",
             )
             return
 
         if self.env_id_var.get().strip() != compatible_env_id:
             self.env_id_var.set(compatible_env_id)
+
+        detected_joints = ENV_ID_TO_JOINTS.get(compatible_env_id)
+        if detected_joints is not None:
+            self.status_var.set(f"Detected model environment: {compatible_env_id} (joints={detected_joints})")
+        else:
             self.status_var.set(f"Detected model environment: {compatible_env_id}")
 
         self.start_run(use_model=True)
@@ -322,6 +354,54 @@ class PendulumViewerApp(tk.Tk):
             canvas.create_text(12, 36, anchor="nw", text="2D pendulum: swing-up + balance", font=("Segoe UI", 10))
             return
 
+        if env_id.startswith("InvertedTriplePendulum"):
+            rail_y = int(height * 0.70)
+            center_x = width // 2
+            scale_x = min(width * 0.25, 220)
+            cart_w = 95
+            cart_h = 40
+
+            cart_x = float(state[0])
+            theta1 = float(np.arctan2(state[1], state[4]))
+            theta2 = float(np.arctan2(state[2], state[5]))
+            theta3 = float(np.arctan2(state[3], state[6]))
+
+            cart_cx = np.clip(center_x + cart_x * scale_x, 70, width - 70)
+            cart_left = cart_cx - cart_w / 2
+            cart_right = cart_cx + cart_w / 2
+            cart_top = rail_y - cart_h
+            cart_bottom = rail_y
+
+            canvas.create_line(40, rail_y, width - 40, rail_y, fill="#888", width=4)
+            canvas.create_rectangle(cart_left, cart_top, cart_right, cart_bottom, fill="#4e79a7", outline="")
+
+            wheel_r = 10
+            canvas.create_oval(cart_left + 10 - wheel_r, rail_y - wheel_r, cart_left + 10 + wheel_r, rail_y + wheel_r, fill="#222", outline="")
+            canvas.create_oval(cart_right - 10 - wheel_r, rail_y - wheel_r, cart_right - 10 + wheel_r, rail_y + wheel_r, fill="#222", outline="")
+
+            pivot_x = cart_cx
+            pivot_y = cart_top
+            l1 = min(width, height) * 0.21
+            l2 = min(width, height) * 0.19
+            l3 = min(width, height) * 0.17
+
+            p1_x = pivot_x + l1 * np.sin(theta1)
+            p1_y = pivot_y - l1 * np.cos(theta1)
+            p2_x = p1_x + l2 * np.sin(theta2)
+            p2_y = p1_y - l2 * np.cos(theta2)
+            p3_x = p2_x + l3 * np.sin(theta3)
+            p3_y = p2_y - l3 * np.cos(theta3)
+
+            canvas.create_line(pivot_x, pivot_y, p1_x, p1_y, fill="#f28e2b", width=8)
+            canvas.create_line(p1_x, p1_y, p2_x, p2_y, fill="#e15759", width=7)
+            canvas.create_line(p2_x, p2_y, p3_x, p3_y, fill="#76b7b2", width=6)
+            canvas.create_oval(pivot_x - 7, pivot_y - 7, pivot_x + 7, pivot_y + 7, fill="#333", outline="")
+            canvas.create_oval(p1_x - 9, p1_y - 9, p1_x + 9, p1_y + 9, fill="#333", outline="")
+            canvas.create_oval(p2_x - 10, p2_y - 10, p2_x + 10, p2_y + 10, fill="#333", outline="")
+            canvas.create_oval(p3_x - 12, p3_y - 12, p3_x + 12, p3_y + 12, fill="#59a14f", outline="")
+            canvas.create_text(12, 36, anchor="nw", text="2D triple pendulum on cart: move cart + stabilize all 3 links", font=("Segoe UI", 10))
+            return
+
         rail_y = int(height * 0.70)
         center_x = width // 2
         scale_x = min(width * 0.25, 220)
@@ -377,7 +457,8 @@ class PendulumViewerApp(tk.Tk):
         actor_model = None
         env = None
         try:
-            env_candidates = [env_id, "InvertedDoublePendulum-v5", "Pendulum-v1"]
+            register_triple_pendulum_env()
+            env_candidates = [env_id, TRIPLE_PENDULUM_ENV_ID, "InvertedDoublePendulum-v5", "Pendulum-v1"]
             # Preserve order while removing duplicates.
             env_candidates = list(dict.fromkeys(env_candidates))
 
@@ -435,7 +516,7 @@ class PendulumViewerApp(tk.Tk):
                 if use_model and load_error is not None:
                     raise ValueError(
                         "Could not load this model for any supported environment shape "
-                        "(InvertedDoublePendulum-v5 or Pendulum-v1). "
+                        f"({TRIPLE_PENDULUM_ENV_ID}, InvertedDoublePendulum-v5, or Pendulum-v1). "
                         f"Last error: {self._summarize_exception(load_error)}"
                     ) from load_error
                 if env_create_error is not None:

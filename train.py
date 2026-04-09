@@ -14,6 +14,15 @@ import numpy as np
 import tensorflow as tf
 from keras import layers
 
+from triple_pendulum_env import TRIPLE_PENDULUM_ENV_ID, register_triple_pendulum_env
+
+DEFAULT_JOINTS = 3
+JOINTS_TO_ENV_ID = {
+    1: "Pendulum-v1",
+    2: "InvertedDoublePendulum-v5",
+    3: TRIPLE_PENDULUM_ENV_ID,
+}
+
 
 @dataclass
 class DDPGConfig:
@@ -176,7 +185,25 @@ def linear_decay(step: int, start: float, end: float, decay_steps: int) -> float
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train DDPG on a continuous-control Gymnasium environment with Keras.")
     parser.add_argument("--episodes", type=int, default=500, help="Number of training episodes.")
-    parser.add_argument("--env-id", type=str, default="InvertedDoublePendulum-v5", help="Gymnasium environment id (for example Pendulum-v1 or InvertedDoublePendulum-v5).")
+    parser.add_argument(
+        "--joints",
+        type=int,
+        default=DEFAULT_JOINTS,
+        choices=sorted(JOINTS_TO_ENV_ID.keys()),
+        help=(
+            "Number of pendulum joints used to auto-select env id "
+            f"(1=Pendulum-v1, 2=InvertedDoublePendulum-v5, 3={TRIPLE_PENDULUM_ENV_ID})."
+        ),
+    )
+    parser.add_argument(
+        "--env-id",
+        type=str,
+        default="",
+        help=(
+            "Gymnasium environment id override. If omitted, env is chosen from --joints "
+            f"(for example Pendulum-v1, InvertedDoublePendulum-v5, or {TRIPLE_PENDULUM_ENV_ID})."
+        ),
+    )
     parser.add_argument("--output-dir", type=str, default="artifacts", help="Output directory for model files and metadata.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--render", action="store_true", help="Render environment while training (slower; not for HPC).")
@@ -192,6 +219,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--noise-start", type=float, default=0.3, help="Initial exploration noise stddev.")
     parser.add_argument("--noise-end", type=float, default=0.05, help="Final exploration noise stddev.")
     parser.add_argument("--noise-decay-episodes", type=int, default=300, help="Episodes over which exploration noise decays.")
+    parser.add_argument(
+        "--save-full-artifacts",
+        type=int,
+        default=0,
+        choices=[0, 1],
+        help="Save full training artifacts (1) or only one actor weights file (0, default).",
+    )
     return parser.parse_args()
 
 
@@ -199,6 +233,26 @@ def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     tf.random.set_seed(seed)
+
+
+def _make_env(env_id: str) -> gym.Env:
+    register_triple_pendulum_env()
+    return gym.make(env_id)
+
+
+def resolve_env_id(joints: int, env_id_override: str) -> str:
+    env_id_override = env_id_override.strip()
+    if env_id_override:
+        return env_id_override
+    if joints not in JOINTS_TO_ENV_ID:
+        raise ValueError(f"Unsupported joints value: {joints}. Supported joints are {sorted(JOINTS_TO_ENV_ID.keys())}.")
+    return JOINTS_TO_ENV_ID[joints]
+
+
+def make_env_slug(env_id: str) -> str:
+    slug = env_id.lower().replace("-", "_")
+    slug = "".join(ch for ch in slug if ch.isalnum() or ch == "_")
+    return slug or "unknown_env"
 
 
 @tf.function
@@ -236,7 +290,9 @@ def train_step(
 
 
 def main() -> None:
+    register_triple_pendulum_env()
     args = parse_args()
+    resolved_env_id = resolve_env_id(args.joints, args.env_id)
     if args.num_envs < 1:
         raise ValueError("--num-envs must be >= 1")
     if args.log_interval_steps < 1:
@@ -267,19 +323,19 @@ def main() -> None:
 
     render_mode = "human" if args.render else None
     if args.num_envs == 1:
-        env = gym.make(args.env_id, render_mode=render_mode)
+        env = _make_env(resolved_env_id) if render_mode is None else gym.make(resolved_env_id, render_mode=render_mode)
         obs_space = env.observation_space
         action_space = env.action_space
     else:
-        env_fns = [lambda env_id=args.env_id: gym.make(env_id) for _ in range(args.num_envs)]
+        env_fns = [lambda env_id=resolved_env_id: _make_env(env_id) for _ in range(args.num_envs)]
         env = gym.vector.AsyncVectorEnv(env_fns)
         obs_space = env.single_observation_space
         action_space = env.single_action_space
 
     if not isinstance(action_space, gym.spaces.Box):
-        raise ValueError(f"Environment {args.env_id} must use a continuous Box action space.")
+        raise ValueError(f"Environment {resolved_env_id} must use a continuous Box action space.")
     if not isinstance(obs_space, gym.spaces.Box):
-        raise ValueError(f"Environment {args.env_id} must use a Box observation space.")
+        raise ValueError(f"Environment {resolved_env_id} must use a Box observation space.")
 
     num_states = obs_space.shape[0]
     num_actions = action_space.shape[0]
@@ -288,7 +344,8 @@ def main() -> None:
 
     print(f"State space: {num_states}")
     print(f"Action space: {num_actions}")
-    print(f"Environment: {args.env_id}")
+    print(f"Environment: {resolved_env_id}")
+    print(f"Joints: {args.joints}")
     print(f"Action bounds: low={lower_bound} high={upper_bound}")
     print(f"Parallel envs: {args.num_envs}")
     print(f"Log interval steps: {args.log_interval_steps}")
@@ -296,9 +353,12 @@ def main() -> None:
     print(f"Critic lr: {cfg.critic_lr}")
     print(f"Replay capacity: {cfg.buffer_capacity}")
     print(f"Batch size: {cfg.batch_size}")
+    print(f"Save full artifacts: {args.save_full_artifacts}")
     print(f"Exploration noise: start={cfg.std_dev_start:.3f} end={cfg.std_dev_end:.3f} decay_episodes={cfg.std_dev_decay_episodes}")
-    if args.env_id.startswith("InvertedDoublePendulum") and args.episodes < 200:
+    if resolved_env_id.startswith("InvertedDoublePendulum") and args.episodes < 200:
         print("Warning: InvertedDoublePendulum usually needs many more than 200 episodes for clear learning progress.", flush=True)
+    if resolved_env_id.startswith("InvertedTriplePendulum") and args.episodes < 300:
+        print("Warning: InvertedTriplePendulum usually needs many more than 300 episodes for clear learning progress.", flush=True)
 
     gpus = tf.config.list_physical_devices("GPU")
     print(f"Visible GPUs: {len(gpus)}")
@@ -431,60 +491,62 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    artifact_prefix = f"model_pendulum_{run_stamp}_ep{cfg.total_episodes}"
+    env_slug = make_env_slug(resolved_env_id)
+    artifact_prefix = f"model_pendulum_j{args.joints}_ep{cfg.total_episodes}_{run_stamp}_{env_slug}"
 
     actor_path = output_dir / f"{artifact_prefix}_actor.weights.h5"
-    critic_path = output_dir / f"{artifact_prefix}_critic.weights.h5"
-    target_actor_path = output_dir / f"{artifact_prefix}_target_actor.weights.h5"
-    target_critic_path = output_dir / f"{artifact_prefix}_target_critic.weights.h5"
-    rewards_path = output_dir / f"{artifact_prefix}_rewards.npy"
-    episode_lengths_path = output_dir / f"{artifact_prefix}_episode_lengths.npy"
-    best_actor_path = output_dir / f"{artifact_prefix}_best_actor.weights.h5"
-
-    actor_model.save_weights(actor_path)
-    critic_model.save_weights(critic_path)
-    target_actor.save_weights(target_actor_path)
-    target_critic.save_weights(target_critic_path)
-    np.save(rewards_path, np.array(rolling_avg_rewards, dtype=np.float32))
-    np.save(episode_lengths_path, np.array(episode_lengths, dtype=np.int32))
-
     if best_actor_weights is not None:
         best_actor_model = get_actor(num_states=num_states, num_actions=num_actions, upper_bound=upper_bound)
         best_actor_model.set_weights(best_actor_weights)
-        best_actor_model.save_weights(best_actor_path)
+        best_actor_model.save_weights(actor_path)
+    else:
+        actor_model.save_weights(actor_path)
 
-    metadata = {
-        "created_at": run_stamp,
-        "env": args.env_id,
-        "seed": args.seed,
-        "episodes": cfg.total_episodes,
-        "max_steps_per_episode": cfg.max_steps_per_episode,
-        "num_envs": args.num_envs,
-        "buffer_capacity": cfg.buffer_capacity,
-        "batch_size": cfg.batch_size,
-        "noise_start": cfg.std_dev_start,
-        "noise_end": cfg.std_dev_end,
-        "noise_decay_episodes": cfg.std_dev_decay_episodes,
-        "gamma": cfg.gamma,
-        "tau": cfg.tau,
-        "actor_lr": cfg.actor_lr,
-        "critic_lr": cfg.critic_lr,
-        "best_avg_reward_40": best_avg_reward if best_avg_reward > float("-inf") else None,
-        "best_episode": best_episode if best_episode > 0 else None,
-        "visible_gpus": len(gpus),
-        "final_avg_reward_40": rolling_avg_rewards[-1] if rolling_avg_rewards else None,
-        "actor_weights": actor_path.name,
-        "critic_weights": critic_path.name,
-        "target_actor_weights": target_actor_path.name,
-        "target_critic_weights": target_critic_path.name,
-        "rewards_file": rewards_path.name,
-        "episode_lengths_file": episode_lengths_path.name,
-        "best_actor_weights": best_actor_path.name if best_actor_weights is not None else None,
-    }
+    if args.save_full_artifacts == 1:
+        critic_path = output_dir / f"{artifact_prefix}_critic.weights.h5"
+        target_actor_path = output_dir / f"{artifact_prefix}_target_actor.weights.h5"
+        target_critic_path = output_dir / f"{artifact_prefix}_target_critic.weights.h5"
+        rewards_path = output_dir / f"{artifact_prefix}_rewards.npy"
+        episode_lengths_path = output_dir / f"{artifact_prefix}_episode_lengths.npy"
 
-    metadata_path = output_dir / "metadata.json"
-    with metadata_path.open("w", encoding="utf-8") as handle:
-        json.dump(metadata, handle, indent=2)
+        critic_model.save_weights(critic_path)
+        target_actor.save_weights(target_actor_path)
+        target_critic.save_weights(target_critic_path)
+        np.save(rewards_path, np.array(rolling_avg_rewards, dtype=np.float32))
+        np.save(episode_lengths_path, np.array(episode_lengths, dtype=np.int32))
+
+        metadata = {
+            "created_at": run_stamp,
+            "env": resolved_env_id,
+            "joints": args.joints,
+            "seed": args.seed,
+            "episodes": cfg.total_episodes,
+            "max_steps_per_episode": cfg.max_steps_per_episode,
+            "num_envs": args.num_envs,
+            "buffer_capacity": cfg.buffer_capacity,
+            "batch_size": cfg.batch_size,
+            "noise_start": cfg.std_dev_start,
+            "noise_end": cfg.std_dev_end,
+            "noise_decay_episodes": cfg.std_dev_decay_episodes,
+            "gamma": cfg.gamma,
+            "tau": cfg.tau,
+            "actor_lr": cfg.actor_lr,
+            "critic_lr": cfg.critic_lr,
+            "best_avg_reward_40": best_avg_reward if best_avg_reward > float("-inf") else None,
+            "best_episode": best_episode if best_episode > 0 else None,
+            "visible_gpus": len(gpus),
+            "final_avg_reward_40": rolling_avg_rewards[-1] if rolling_avg_rewards else None,
+            "actor_weights": actor_path.name,
+            "critic_weights": critic_path.name,
+            "target_actor_weights": target_actor_path.name,
+            "target_critic_weights": target_critic_path.name,
+            "rewards_file": rewards_path.name,
+            "episode_lengths_file": episode_lengths_path.name,
+        }
+
+        metadata_path = output_dir / "metadata.json"
+        with metadata_path.open("w", encoding="utf-8") as handle:
+            json.dump(metadata, handle, indent=2)
 
     print(f"Training complete. Artifacts written to: {output_dir}")
 

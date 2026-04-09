@@ -15,3 +15,5 @@ cd /work/classtmp/$USER
 git clone https://github.com/yeoldawesome/PendulumModel.git
 cd PendulumModel
 git pull --ff-only origin main
+
+Set-Location "c:/Users/dnlon/Downloads/Ai-Class/PendulumModel"; & "c:/Users/dnlon/Downloads/Ai-Class/PendulumModel/.venv/Scripts/python.exe" train.py --episodes 3
