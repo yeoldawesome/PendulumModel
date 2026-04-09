@@ -17,3 +17,19 @@ cd PendulumModel
 git pull --ff-only origin main
 
 Set-Location "c:/Users/dnlon/Downloads/Ai-Class/PendulumModel"; & "c:/Users/dnlon/Downloads/Ai-Class/PendulumModel/.venv/Scripts/python.exe" train.py --episodes 3
+
+
+How it behaves now:
+
+Default is triple pendulum.
+You can switch to double by passing env-id.
+Examples:
+
+Triple (default):
+bash submit_and_watch_hpc.sh
+Double:
+bash submit_and_watch_hpc.sh --env-id InvertedDoublePendulum-v5
+Practical note:
+
+Triple uses your custom repo env and should run without MuJoCo.
+Double uses MuJoCo Gym env, so it needs MuJoCo dependencies available on the HPC job environment.
