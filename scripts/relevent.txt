@@ -1,4 +1,4 @@
-cd /work/classtmp/$USER/TranslationModel
+cd /work/classtmp/$USER/PendulumModel
 git pull --ff-only origin main
 
 bash scripts/cancel_all_jobs.sh --force
