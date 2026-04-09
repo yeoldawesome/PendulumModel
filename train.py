@@ -210,7 +210,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-gpu", type=int, default=0, choices=[0, 1], help="Exit with error when no GPU is detected.")
     parser.add_argument("--max-steps-per-episode", type=int, default=2000, help="Maximum environment steps per episode.")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environment instances for faster simulation.")
-    parser.add_argument("--log-interval-steps", type=int, default=100, help="Print in-episode progress every N steps.")
+    parser.add_argument("--log-interval-steps", type=int, default=500, help="Print in-episode progress every N steps.")
     parser.add_argument("--actor-lr", type=float, default=0.0003, help="Actor learning rate.")
     parser.add_argument("--critic-lr", type=float, default=0.001, help="Critic learning rate.")
     parser.add_argument("--tau", type=float, default=0.002, help="Target network update factor.")
