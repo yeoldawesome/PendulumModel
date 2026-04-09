@@ -114,9 +114,9 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
         # Use (1 - cos(theta)) so reward is smooth near upright and periodic over angle wrap.
         angle_cost = 8.0 * (1.0 - math.cos(t1)) + 10.0 * (1.0 - math.cos(t2)) + 12.0 * (1.0 - math.cos(t3))
         cart_cost = 1.8 * (x**2)
-        # Keep a light velocity penalty to permit high-gain corrections when needed.
-        vel_cost = 0.015 * (x_dot**2 + t1_dot**2 + t2_dot**2 + t3_dot**2)
-        action_cost = 0.01 * (force**2)
+        # No motion-effort penalties: aggressive corrections are fully allowed.
+        vel_cost = 0.0
+        action_cost = 0.0
 
         is_stable = (
             abs(t1) < 0.15
