@@ -25,6 +25,13 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
         self.dt = 0.02
         self.gravity = 9.81
         self.step_count = 0
+        self.prev_force = 0.0
+
+        # Reward shaping tuned for sustained balance instead of short recoveries.
+        self.base_reward = 10.0
+        self.terminal_penalty = 100.0
+        self.delta_action_weight = 0.01
+        self.stability_bonus = 1.0
 
         # Internal state: x, x_dot, theta1, theta2, theta3, theta1_dot, theta2_dot, theta3_dot
         self.state = np.zeros(8, dtype=np.float32)
@@ -75,6 +82,7 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
         # Start close to upright with a small randomized perturbation.
         self.state = self.np_random.normal(loc=0.0, scale=0.04, size=(8,)).astype(np.float32)
         self.step_count = 0
+        self.prev_force = 0.0
         return self._get_obs(), {}
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
@@ -106,17 +114,33 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
 
         self.state = np.array([x, x_dot, t1, t2, t3, t1_dot, t2_dot, t3_dot], dtype=np.float32)
 
-        angle_cost = 4.0 * (t1**2) + 5.0 * (t2**2) + 6.0 * (t3**2)
+        # Use (1 - cos(theta)) so reward is smooth near upright and periodic over angle wrap.
+        angle_cost = 8.0 * (1.0 - math.cos(t1)) + 10.0 * (1.0 - math.cos(t2)) + 12.0 * (1.0 - math.cos(t3))
         cart_cost = 1.8 * (x**2)
-        vel_cost = 0.02 * (x_dot**2 + t1_dot**2 + t2_dot**2 + t3_dot**2)
+        vel_cost = 0.05 * (x_dot**2 + t1_dot**2 + t2_dot**2 + t3_dot**2)
         action_cost = 0.01 * (force**2)
+        delta_action_cost = self.delta_action_weight * ((force - self.prev_force) ** 2)
 
-        cost = cart_cost + angle_cost + vel_cost + action_cost
-        reward = float(10.0 - cost)
+        is_stable = (
+            abs(t1) < 0.15
+            and abs(t2) < 0.15
+            and abs(t3) < 0.15
+            and abs(t1_dot) < 1.0
+            and abs(t2_dot) < 1.0
+            and abs(t3_dot) < 1.0
+            and abs(x) < 0.5
+            and abs(x_dot) < 1.0
+        )
+        stable_bonus = self.stability_bonus if is_stable else 0.0
+
+        cost = cart_cost + angle_cost + vel_cost + action_cost + delta_action_cost
+        reward = float(self.base_reward - cost + stable_bonus)
 
         terminated = bool(abs(x) > 2.4 or abs(t1) > 2.75 or abs(t2) > 2.75 or abs(t3) > 2.75)
         if terminated:
-            reward -= 25.0
+            reward -= self.terminal_penalty
+
+        self.prev_force = force
 
         truncated = self.step_count >= self.max_episode_steps
         return self._get_obs(), reward, terminated, truncated, {}
