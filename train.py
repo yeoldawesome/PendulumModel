@@ -1,4 +1,5 @@
 import argparse
+import csv
 import datetime as dt
 import json
 import os
@@ -256,6 +257,24 @@ def parse_args() -> argparse.Namespace:
         help="Save actor checkpoints every N episodes (0 disables periodic checkpoints).",
     )
     parser.add_argument(
+        "--eval-every-episodes",
+        type=int,
+        default=25,
+        help="Run deterministic evaluation every N training episodes (0 disables periodic evaluation).",
+    )
+    parser.add_argument(
+        "--eval-episodes",
+        type=int,
+        default=10,
+        help="Number of deterministic evaluation episodes per evaluation event.",
+    )
+    parser.add_argument(
+        "--eval-max-steps",
+        type=int,
+        default=1000,
+        help="Max steps per deterministic evaluation episode.",
+    )
+    parser.add_argument(
         "--resume-actor-weights",
         type=str,
         default="",
@@ -305,6 +324,89 @@ def infer_episode_offset_from_weights(path_str: str) -> int | None:
     if not match:
         return None
     return int(match.group(1))
+
+
+def run_deterministic_evaluation(
+    actor_model: keras.Model,
+    env_id: str,
+    episodes: int,
+    max_steps: int,
+    seed: int,
+) -> dict[str, float]:
+    eval_env = _make_env(env_id)
+    if not isinstance(eval_env.action_space, gym.spaces.Box):
+        eval_env.close()
+        raise ValueError(f"Environment {env_id} must use a continuous Box action space for evaluation.")
+
+    lower_bound = eval_env.action_space.low.astype(np.float32)
+    upper_bound = eval_env.action_space.high.astype(np.float32)
+
+    returns: list[float] = []
+    resets_per_episode: list[int] = []
+    time_to_failure_steps: list[int] = []
+    success_flags: list[int] = []
+
+    try:
+        for eval_idx in range(episodes):
+            state, _ = eval_env.reset(seed=seed + eval_idx)
+            total_reward = 0.0
+            resets = 0
+            first_failure_step = max_steps
+
+            for step_idx in range(max_steps):
+                state_tensor = tf.convert_to_tensor(state[np.newaxis, :], dtype=tf.float32)
+                action_value = tf.squeeze(actor_model(state_tensor, training=False), axis=0).numpy()
+                action = np.clip(action_value, lower_bound, upper_bound).astype(np.float32)
+
+                state, reward, terminated, truncated, _ = eval_env.step(action)
+                total_reward += float(reward)
+
+                if terminated or truncated:
+                    if first_failure_step == max_steps:
+                        first_failure_step = step_idx + 1
+                    resets += 1
+                    state, _ = eval_env.reset(seed=seed + eval_idx * 100000 + step_idx + 1)
+
+            returns.append(total_reward)
+            resets_per_episode.append(resets)
+            time_to_failure_steps.append(first_failure_step)
+            success_flags.append(1 if resets == 0 else 0)
+    finally:
+        eval_env.close()
+
+    returns_arr = np.asarray(returns, dtype=np.float32)
+    resets_arr = np.asarray(resets_per_episode, dtype=np.float32)
+    failure_steps_arr = np.asarray(time_to_failure_steps, dtype=np.float32)
+    success_arr = np.asarray(success_flags, dtype=np.float32)
+
+    n = max(int(returns_arr.size), 1)
+    mean_return = float(np.mean(returns_arr))
+    median_return = float(np.median(returns_arr))
+    std_return = float(np.std(returns_arr, ddof=1)) if n > 1 else 0.0
+    stderr_return = std_return / np.sqrt(n) if n > 1 else 0.0
+    ci95_scale = 1.96
+    return_ci95_low = mean_return - ci95_scale * stderr_return
+    return_ci95_high = mean_return + ci95_scale * stderr_return
+
+    success_rate = float(np.mean(success_arr))
+    success_stderr = float(np.sqrt(success_rate * (1.0 - success_rate) / n)) if n > 1 else 0.0
+    success_ci95_low = max(0.0, success_rate - ci95_scale * success_stderr)
+    success_ci95_high = min(1.0, success_rate + ci95_scale * success_stderr)
+
+    return {
+        "eval_episodes": float(episodes),
+        "mean_return": mean_return,
+        "median_return": median_return,
+        "return_std": std_return,
+        "return_stderr": stderr_return,
+        "return_ci95_low": float(return_ci95_low),
+        "return_ci95_high": float(return_ci95_high),
+        "success_rate": success_rate,
+        "success_ci95_low": float(success_ci95_low),
+        "success_ci95_high": float(success_ci95_high),
+        "avg_time_to_failure_steps": float(np.mean(failure_steps_arr)),
+        "avg_resets_per_episode": float(np.mean(resets_arr)),
+    }
 
 
 @tf.function
@@ -359,6 +461,12 @@ def main() -> None:
         raise ValueError("--warmup-steps must be >= 0")
     if args.checkpoint_interval_episodes < 0:
         raise ValueError("--checkpoint-interval-episodes must be >= 0")
+    if args.eval_every_episodes < 0:
+        raise ValueError("--eval-every-episodes must be >= 0")
+    if args.eval_episodes < 1:
+        raise ValueError("--eval-episodes must be >= 1")
+    if args.eval_max_steps < 1:
+        raise ValueError("--eval-max-steps must be >= 1")
     if args.resume_episode_offset < -1:
         raise ValueError("--resume-episode-offset must be >= -1")
     if args.noise_start < 0 or args.noise_end < 0:
@@ -420,6 +528,9 @@ def main() -> None:
     print(f"Updates per step: {cfg.updates_per_step}")
     print(f"Warmup steps: {cfg.warmup_steps}")
     print(f"Checkpoint interval episodes: {cfg.checkpoint_interval_episodes}")
+    print(f"Eval every episodes: {args.eval_every_episodes}")
+    print(f"Eval episodes: {args.eval_episodes}")
+    print(f"Eval max steps: {args.eval_max_steps}")
     print(f"Save full artifacts: {args.save_full_artifacts}")
     print(f"Exploration noise: start={cfg.std_dev_start:.3f} end={cfg.std_dev_end:.3f} decay_episodes={cfg.std_dev_decay_episodes}")
     if resolved_env_id.startswith("InvertedDoublePendulum") and args.episodes < 200:
@@ -495,9 +606,13 @@ def main() -> None:
     episodic_rewards: list[float] = []
     rolling_avg_rewards: list[float] = []
     episode_lengths: list[int] = []
-    best_avg_reward = float("-inf")
-    best_episode = -1
+    eval_enabled = args.eval_every_episodes > 0
+    best_train_avg_reward = float("-inf")
+    best_train_episode = -1
+    best_eval_mean_return = float("-inf")
+    best_eval_episode = -1
     best_actor_weights = None
+    eval_rows: list[dict[str, float | int]] = []
     total_env_steps = 0
     latest_checkpoint_path: pathlib.Path | None = None
     for episode in range(cfg.total_episodes):
@@ -599,14 +714,75 @@ def main() -> None:
         episode_lengths.append(episode_steps)
         avg_reward = float(np.mean(episodic_rewards[-40:]))
         rolling_avg_rewards.append(avg_reward)
-        if avg_reward > best_avg_reward:
-            best_avg_reward = avg_reward
-            best_episode = episode + 1
-            best_actor_weights = actor_model.get_weights()
+        if avg_reward > best_train_avg_reward:
+            best_train_avg_reward = avg_reward
+            best_train_episode = global_episode
+            if not eval_enabled:
+                best_actor_weights = actor_model.get_weights()
         print(
             f"Episode {global_episode:03d}/{total_episode_target} | Steps: {episode_steps:04d} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
             flush=True,
         )
+
+        should_eval = eval_enabled and (
+            global_episode % args.eval_every_episodes == 0 or episode == cfg.total_episodes - 1
+        )
+        if should_eval:
+            eval_seed = args.seed + global_episode * 1000
+            eval_metrics = run_deterministic_evaluation(
+                actor_model=actor_model,
+                env_id=resolved_env_id,
+                episodes=args.eval_episodes,
+                max_steps=args.eval_max_steps,
+                seed=eval_seed,
+            )
+
+            eval_rows.append(
+                {
+                    "episode": global_episode,
+                    "mean_return": eval_metrics["mean_return"],
+                    "median_return": eval_metrics["median_return"],
+                    "return_std": eval_metrics["return_std"],
+                    "return_stderr": eval_metrics["return_stderr"],
+                    "return_ci95_low": eval_metrics["return_ci95_low"],
+                    "return_ci95_high": eval_metrics["return_ci95_high"],
+                    "success_rate": eval_metrics["success_rate"],
+                    "success_ci95_low": eval_metrics["success_ci95_low"],
+                    "success_ci95_high": eval_metrics["success_ci95_high"],
+                    "avg_time_to_failure_steps": eval_metrics["avg_time_to_failure_steps"],
+                    "avg_resets_per_episode": eval_metrics["avg_resets_per_episode"],
+                    "eval_episodes": int(eval_metrics["eval_episodes"]),
+                    "eval_max_steps": args.eval_max_steps,
+                }
+            )
+
+            print(
+                " | ".join(
+                    [
+                        f"Eval @ episode {global_episode:03d}",
+                        f"mean={eval_metrics['mean_return']:.2f}",
+                        f"median={eval_metrics['median_return']:.2f}",
+                        f"95% CI=[{eval_metrics['return_ci95_low']:.2f}, {eval_metrics['return_ci95_high']:.2f}]",
+                        f"success={100.0 * eval_metrics['success_rate']:.1f}%",
+                        (
+                            f"success 95% CI=[{100.0 * eval_metrics['success_ci95_low']:.1f}%, "
+                            f"{100.0 * eval_metrics['success_ci95_high']:.1f}%]"
+                        ),
+                        f"avg time-to-failure={eval_metrics['avg_time_to_failure_steps']:.1f}",
+                        f"avg resets={eval_metrics['avg_resets_per_episode']:.2f}",
+                    ]
+                ),
+                flush=True,
+            )
+
+            if eval_metrics["mean_return"] > best_eval_mean_return:
+                best_eval_mean_return = eval_metrics["mean_return"]
+                best_eval_episode = global_episode
+                best_actor_weights = actor_model.get_weights()
+                print(
+                    f"New best checkpoint by eval mean return: episode {global_episode} ({best_eval_mean_return:.2f})",
+                    flush=True,
+                )
 
         if cfg.checkpoint_interval_episodes > 0 and global_episode % cfg.checkpoint_interval_episodes == 0:
             checkpoint_path = save_actor_checkpoint(global_episode)
@@ -619,6 +795,31 @@ def main() -> None:
     episodes_completed = len(episodic_rewards)
     total_episodes_completed = episode_offset + episodes_completed
     artifact_prefix = f"model_pendulum_j{args.joints}_ep{total_episodes_completed}_{run_stamp}_{env_slug}"
+    eval_metrics_csv_name = f"{artifact_prefix}_eval_metrics.csv"
+    eval_metrics_csv_path = output_dir / eval_metrics_csv_name
+
+    if eval_rows:
+        eval_fieldnames = [
+            "episode",
+            "mean_return",
+            "median_return",
+            "return_std",
+            "return_stderr",
+            "return_ci95_low",
+            "return_ci95_high",
+            "success_rate",
+            "success_ci95_low",
+            "success_ci95_high",
+            "avg_time_to_failure_steps",
+            "avg_resets_per_episode",
+            "eval_episodes",
+            "eval_max_steps",
+        ]
+        with eval_metrics_csv_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=eval_fieldnames)
+            writer.writeheader()
+            writer.writerows(eval_rows)
+        print(f"Saved eval metrics CSV: {eval_metrics_csv_path}", flush=True)
 
     actor_path = output_dir / f"{artifact_prefix}_actor.weights.h5"
     if best_actor_weights is not None:
@@ -666,10 +867,18 @@ def main() -> None:
             "tau": cfg.tau,
             "actor_lr": cfg.actor_lr,
             "critic_lr": cfg.critic_lr,
-            "best_avg_reward_40": best_avg_reward if best_avg_reward > float("-inf") else None,
-            "best_episode": best_episode if best_episode > 0 else None,
+            "best_train_avg_reward_40": best_train_avg_reward if best_train_avg_reward > float("-inf") else None,
+            "best_train_episode": best_train_episode if best_train_episode > 0 else None,
+            "eval_enabled": eval_enabled,
+            "eval_every_episodes": args.eval_every_episodes,
+            "eval_episodes": args.eval_episodes,
+            "eval_max_steps": args.eval_max_steps,
+            "best_eval_mean_return": best_eval_mean_return if best_eval_mean_return > float("-inf") else None,
+            "best_eval_episode": best_eval_episode if best_eval_episode > 0 else None,
             "visible_gpus": len(gpus),
             "final_avg_reward_40": rolling_avg_rewards[-1] if rolling_avg_rewards else None,
+            "final_eval_mean_return": eval_rows[-1]["mean_return"] if eval_rows else None,
+            "eval_metrics_csv": eval_metrics_csv_name if eval_rows else None,
             "actor_weights": actor_path.name,
             "critic_weights": critic_path.name,
             "target_actor_weights": target_actor_path.name,

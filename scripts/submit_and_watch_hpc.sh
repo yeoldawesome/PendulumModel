@@ -26,6 +26,9 @@ CHECKPOINT_INTERVAL_EPISODES="1"
 NOISE_START="0.3"
 NOISE_END="0.05"
 NOISE_DECAY_EPISODES="300"
+EVAL_EVERY_EPISODES="25"
+EVAL_EPISODES="10"
+EVAL_MAX_STEPS="1000"
 RESUME_ACTOR_WEIGHTS=""
 RESUME_EPISODE_OFFSET="-1"
 GPUS="1"
@@ -120,6 +123,18 @@ while [[ $# -gt 0 ]]; do
       NOISE_DECAY_EPISODES="$2"
       shift 2
       ;;
+    --eval-every-episodes)
+      EVAL_EVERY_EPISODES="$2"
+      shift 2
+      ;;
+    --eval-episodes)
+      EVAL_EPISODES="$2"
+      shift 2
+      ;;
+    --eval-max-steps)
+      EVAL_MAX_STEPS="$2"
+      shift 2
+      ;;
     --resume-actor-weights)
       RESUME_ACTOR_WEIGHTS="$2"
       shift 2
@@ -199,6 +214,9 @@ Optional overrides:
   --noise-start Initial exploration noise stddev (default: 0.3)
   --noise-end   Final exploration noise stddev (default: 0.05)
   --noise-decay-episodes Episodes to decay exploration noise over (default: 300)
+  --eval-every-episodes Run deterministic eval every N episodes (default: 25, 0 disables)
+  --eval-episodes Number of episodes per eval run (default: 10)
+  --eval-max-steps Max steps per eval episode (default: 1000)
   --resume-actor-weights Path to actor weights file to continue from
   --resume-episode-offset Episode offset for resumed run (-1 auto-infer from filename)
   --gpus        Number of A100 GPUs to request (default: 1)
@@ -271,6 +289,9 @@ echo "  checkpoint-interval-episodes: $CHECKPOINT_INTERVAL_EPISODES"
 echo "  noise-start: $NOISE_START"
 echo "  noise-end: $NOISE_END"
 echo "  noise-decay-episodes: $NOISE_DECAY_EPISODES"
+echo "  eval-every-episodes: $EVAL_EVERY_EPISODES"
+echo "  eval-episodes: $EVAL_EPISODES"
+echo "  eval-max-steps: $EVAL_MAX_STEPS"
 echo "  resume-actor-weights: ${RESUME_ACTOR_WEIGHTS:-<none>}"
 echo "  resume-episode-offset: $RESUME_EPISODE_OFFSET"
 echo "  output: $OUTPUT_DIR"
@@ -299,7 +320,7 @@ submit_output=$(sbatch \
   --cpus-per-task="$CPUS" \
   --mail-user="$EMAIL" \
   --mail-type=BEGIN,END,FAIL \
-  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",LOG_INTERVAL_STEPS="$LOG_INTERVAL_STEPS",ACTOR_LR="$ACTOR_LR",CRITIC_LR="$CRITIC_LR",BUFFER_CAPACITY="$BUFFER_CAPACITY",BATCH_SIZE="$BATCH_SIZE",UPDATES_PER_STEP="$UPDATES_PER_STEP",WARMUP_STEPS="$WARMUP_STEPS",CHECKPOINT_INTERVAL_EPISODES="$CHECKPOINT_INTERVAL_EPISODES",NOISE_START="$NOISE_START",NOISE_END="$NOISE_END",NOISE_DECAY_EPISODES="$NOISE_DECAY_EPISODES",RESUME_ACTOR_WEIGHTS="$RESUME_ACTOR_WEIGHTS",RESUME_EPISODE_OFFSET="$RESUME_EPISODE_OFFSET",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
+  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",LOG_INTERVAL_STEPS="$LOG_INTERVAL_STEPS",ACTOR_LR="$ACTOR_LR",CRITIC_LR="$CRITIC_LR",BUFFER_CAPACITY="$BUFFER_CAPACITY",BATCH_SIZE="$BATCH_SIZE",UPDATES_PER_STEP="$UPDATES_PER_STEP",WARMUP_STEPS="$WARMUP_STEPS",CHECKPOINT_INTERVAL_EPISODES="$CHECKPOINT_INTERVAL_EPISODES",NOISE_START="$NOISE_START",NOISE_END="$NOISE_END",NOISE_DECAY_EPISODES="$NOISE_DECAY_EPISODES",EVAL_EVERY_EPISODES="$EVAL_EVERY_EPISODES",EVAL_EPISODES="$EVAL_EPISODES",EVAL_MAX_STEPS="$EVAL_MAX_STEPS",RESUME_ACTOR_WEIGHTS="$RESUME_ACTOR_WEIGHTS",RESUME_EPISODE_OFFSET="$RESUME_EPISODE_OFFSET",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
   "$SCRIPT_PATH")
 
 echo "$submit_output"

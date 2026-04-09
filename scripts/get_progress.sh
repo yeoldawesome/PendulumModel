@@ -13,7 +13,7 @@ usage() {
   cat <<EOF
 Usage: $0 [options]
 
-Find the current job actor model file and push it to git.
+Find the current job eval metrics CSV file and push it to git.
 
 Options:
   --job-id <id>          Optional Slurm job id (used to discover output dir from logs)
@@ -27,9 +27,9 @@ Options:
 EOF
 }
 
-find_newest_actor() {
+find_newest_eval_csv() {
   local dir="$1"
-  find "$dir" -maxdepth 1 -type f -name '*_actor.weights.h5' ! -name '*target_actor*' -printf '%T@ %p\n' \
+  find "$dir" -maxdepth 1 -type f -name '*_eval_metrics.csv' -printf '%T@ %p\n' \
     | sort -nr \
     | head -n1 \
     | awk '{print $2}'
@@ -100,35 +100,35 @@ if [[ ! -d "$OUTPUT_DIR" ]]; then
   exit 1
 fi
 
-MODEL_PATH=""
+CSV_PATH=""
 if [[ -n "$LOG_FILE" && -f "$LOG_FILE" ]]; then
-  # Prefer exact latest checkpoint path emitted by the running trainer.
-  LOG_CHECKPOINT_PATH=$(grep -E '^Checkpoint saved:' "$LOG_FILE" | tail -n1 | sed -E 's/^Checkpoint saved:[[:space:]]*//')
-  if [[ -n "$LOG_CHECKPOINT_PATH" && -f "$LOG_CHECKPOINT_PATH" ]]; then
-    MODEL_PATH="$LOG_CHECKPOINT_PATH"
-    echo "Using logged checkpoint path: $MODEL_PATH"
+  # Prefer exact latest eval CSV path emitted by the trainer.
+  LOG_EVAL_CSV_PATH=$(grep -E '^Saved eval metrics CSV:' "$LOG_FILE" | tail -n1 | sed -E 's/^Saved eval metrics CSV:[[:space:]]*//')
+  if [[ -n "$LOG_EVAL_CSV_PATH" && -f "$LOG_EVAL_CSV_PATH" ]]; then
+    CSV_PATH="$LOG_EVAL_CSV_PATH"
+    echo "Using logged eval CSV path: $CSV_PATH"
   fi
 
-  if [[ -z "$MODEL_PATH" ]]; then
-    LAST_EPISODE=$(grep -Eo 'Episode[[:space:]]+[0-9]+/[0-9]+' "$LOG_FILE" | tail -n1 | sed -E 's/^Episode[[:space:]]+([0-9]+)\/[0-9]+$/\1/')
+  if [[ -z "$CSV_PATH" ]]; then
+    LAST_EPISODE=$(grep -Eo 'Eval @ episode[[:space:]]+[0-9]+' "$LOG_FILE" | tail -n1 | sed -E 's/^Eval @ episode[[:space:]]+([0-9]+)$/\1/')
     if [[ -n "$LAST_EPISODE" ]]; then
-      MODEL_PATH=$(find "$OUTPUT_DIR" -maxdepth 1 -type f -name "*_ep${LAST_EPISODE}_*_actor.weights.h5" ! -name '*target_actor*' -printf '%T@ %p\n' | sort -nr | head -n1 | awk '{print $2}')
-      if [[ -n "$MODEL_PATH" ]]; then
-        echo "Using episode-matched checkpoint for episode ${LAST_EPISODE}: $MODEL_PATH"
+      CSV_PATH=$(find "$OUTPUT_DIR" -maxdepth 1 -type f -name "*_ep${LAST_EPISODE}_*_eval_metrics.csv" -printf '%T@ %p\n' | sort -nr | head -n1 | awk '{print $2}')
+      if [[ -n "$CSV_PATH" ]]; then
+        echo "Using episode-matched eval CSV for episode ${LAST_EPISODE}: $CSV_PATH"
       fi
     fi
   fi
 fi
 
-if [[ -z "$MODEL_PATH" ]]; then
-  MODEL_PATH=$(find_newest_actor "$OUTPUT_DIR")
-  if [[ -n "$MODEL_PATH" ]]; then
-    echo "Falling back to newest actor file: $MODEL_PATH"
+if [[ -z "$CSV_PATH" ]]; then
+  CSV_PATH=$(find_newest_eval_csv "$OUTPUT_DIR")
+  if [[ -n "$CSV_PATH" ]]; then
+    echo "Falling back to newest eval CSV: $CSV_PATH"
   fi
 fi
 
-if [[ -z "$MODEL_PATH" ]]; then
-  echo "No actor model file found in $OUTPUT_DIR" >&2
+if [[ -z "$CSV_PATH" ]]; then
+  echo "No eval metrics CSV found in $OUTPUT_DIR" >&2
   exit 1
 fi
 
@@ -153,18 +153,18 @@ if [[ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]]; then
   fi
 fi
 
-git add -f "$MODEL_PATH"
+git add -f "$CSV_PATH"
 if git diff --cached --quiet; then
-  echo "No changes to commit for model: $MODEL_PATH"
+  echo "No changes to commit for eval CSV: $CSV_PATH"
   exit 0
 fi
 
-MODEL_NAME=$(basename "$MODEL_PATH")
+CSV_NAME=$(basename "$CSV_PATH")
 JOB_LABEL="${JOB_ID:-latest}"
-git commit -m "hpc: push actor model from job ${JOB_LABEL} (${MODEL_NAME})"
+git commit -m "hpc: push eval CSV from job ${JOB_LABEL} (${CSV_NAME})"
 
 if git push "$REMOTE" "$TARGET_BRANCH"; then
-  echo "Pushed model to ${REMOTE}/${TARGET_BRANCH}: ${MODEL_NAME}"
+  echo "Pushed eval CSV to ${REMOTE}/${TARGET_BRANCH}: ${CSV_NAME}"
 else
   echo "Push failed." >&2
   if [[ "$STRICT_PUSH" == "1" ]]; then
