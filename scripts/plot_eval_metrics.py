@@ -112,7 +112,8 @@ def main() -> None:
     ttf = [r["avg_time_to_failure_steps"] for r in rows]
     median_ttf = [r["median_time_to_failure_steps"] for r in rows]
     max_ttf = [r["max_time_to_failure_steps"] for r in rows]
-    resets = [r["avg_resets_per_episode"] for r in rows]
+    spread_max_avg = [mx - avg for mx, avg in zip(max_ttf, ttf)]
+    spread_avg_median = [avg - med for avg, med in zip(ttf, median_ttf)]
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 8), constrained_layout=True)
 
@@ -153,7 +154,17 @@ def main() -> None:
         )
 
     if any(not math.isnan(v) for v in success_at_10_pct):
-        ax.plot(episodes, success_at_10_pct, label="Success @10", color="#e377c2", linestyle="-")
+        ax.plot(
+            episodes,
+            success_at_10_pct,
+            label="Success @10",
+            color="#1f77b4",
+            linestyle="-",
+            linewidth=2.2,
+            marker="o",
+            markersize=3,
+            zorder=5,
+        )
     if any(not math.isnan(v) for v in success_at_50_pct):
         ax.plot(episodes, success_at_50_pct, label="Success @50", color="#bcbd22", linestyle="-")
     if any(not math.isnan(v) for v in success_at_100_pct):
@@ -171,7 +182,7 @@ def main() -> None:
         + [v for v in success_at_300_ci_high if not math.isnan(v)]
         + [v for v in success_at_500_ci_high if not math.isnan(v)]
     )
-    y_max = 100 if max_success_value > 30 else 30
+    y_max = 110
 
     ax.set_title("Success Rate Trend")
     ax.set_xlabel("Episode")
@@ -194,11 +205,13 @@ def main() -> None:
     ax.legend(loc="best")
 
     ax = axes[1][1]
-    ax.plot(episodes, resets, color="#d62728")
-    ax.set_title("Avg Resets per Episode")
+    ax.plot(episodes, spread_max_avg, color="#d62728", label="Max - Avg")
+    ax.plot(episodes, spread_avg_median, color="#8c564b", linestyle="--", label="Avg - Median")
+    ax.set_title("Failure-Time Spread")
     ax.set_xlabel("Episode")
-    ax.set_ylabel("Resets")
+    ax.set_ylabel("Steps")
     ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
 
     if args.output:
         output_path = pathlib.Path(args.output)
