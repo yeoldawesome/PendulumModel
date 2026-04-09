@@ -3,6 +3,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+import re
 
 import os
 
@@ -28,7 +29,7 @@ class PendulumViewerApp(tk.Tk):
         self.runner_thread: threading.Thread | None = None
 
         self.model_var = tk.StringVar()
-        self.env_id_var = tk.StringVar(value="InvertedDoublePendulum-v5")
+        self.env_id_var = tk.StringVar(value="Pendulum-v1")
         self.episodes_var = tk.StringVar(value="3")
         self.max_steps_var = tk.StringVar(value="200")
         self.frame_delay_ms_var = tk.StringVar(value="300")
@@ -42,6 +43,62 @@ class PendulumViewerApp(tk.Tk):
 
         self._build_ui()
         self.refresh_models()
+
+    @staticmethod
+    def _summarize_exception(exc: Exception, max_len: int = 240) -> str:
+        text = " ".join(str(exc).split())
+        # Strip large tensor dumps if present.
+        text = re.sub(r"\[[^\]]{120,}\]", "[...trimmed...]", text)
+        if len(text) <= max_len:
+            return text
+        return text[: max_len - 3] + "..."
+
+    @staticmethod
+    def _classify_exception_message(exc: Exception) -> str:
+        lower = str(exc).lower()
+        if "mujoco is not installed" in lower:
+            return "MuJoCo not installed"
+        if "could not be loaded" in lower or "must match" in lower or "shape" in lower:
+            return "weights shape mismatch"
+        return "error"
+
+    def _detect_model_compatible_env(self, model_path: str) -> tuple[str | None, str | None]:
+        supported_envs = ("Pendulum-v1", "InvertedDoublePendulum-v5")
+        errors: list[str] = []
+
+        for candidate_env_id in supported_envs:
+            candidate_env = None
+            try:
+                candidate_env = gym.make(candidate_env_id)
+                if not isinstance(candidate_env.action_space, gym.spaces.Box):
+                    errors.append(f"{candidate_env_id}: action space is not Box")
+                    continue
+
+                num_states = candidate_env.observation_space.shape[0]
+                num_actions = candidate_env.action_space.shape[0]
+                upper_bound = candidate_env.action_space.high.astype(np.float32)
+
+                candidate_actor = get_actor(
+                    num_states=num_states,
+                    num_actions=num_actions,
+                    upper_bound=upper_bound,
+                )
+                candidate_actor(np.zeros((1, num_states), dtype=np.float32), training=False)
+                candidate_actor.load_weights(model_path)
+                return candidate_env_id, None
+            except Exception as exc:  # noqa: BLE001
+                kind = self._classify_exception_message(exc)
+                if kind == "MuJoCo not installed":
+                    errors.append(f"{candidate_env_id}: MuJoCo not installed")
+                elif kind == "weights shape mismatch":
+                    errors.append(f"{candidate_env_id}: weights shape mismatch")
+                else:
+                    errors.append(f"{candidate_env_id}: {self._summarize_exception(exc)}")
+            finally:
+                if candidate_env is not None:
+                    candidate_env.close()
+
+        return None, " | ".join(errors)
 
     def _build_ui(self) -> None:
         container = ttk.Frame(self, padding=12)
@@ -147,6 +204,28 @@ class PendulumViewerApp(tk.Tk):
         if not pathlib.Path(model_path).exists():
             messagebox.showerror("Missing model", "Selected model file does not exist.")
             return
+
+        compatible_env_id, reason = self._detect_model_compatible_env(model_path)
+        if compatible_env_id is None:
+            details = reason or "unknown mismatch"
+            if "MuJoCo not installed" in details and "weights shape mismatch" in details:
+                details = (
+                    "Model does not match Pendulum-v1, and InvertedDoublePendulum-v5 is unavailable because MuJoCo is missing. "
+                    "Install with: pip install \"gymnasium[mujoco]\""
+                )
+            elif "MuJoCo not installed" in details:
+                details = "InvertedDoublePendulum-v5 is unavailable because MuJoCo is missing. Install with: pip install \"gymnasium[mujoco]\""
+            messagebox.showerror(
+                "Incompatible model",
+                "This model does not match supported viewer environments (Pendulum-v1 or InvertedDoublePendulum-v5). "
+                f"Details: {details}",
+            )
+            return
+
+        if self.env_id_var.get().strip() != compatible_env_id:
+            self.env_id_var.set(compatible_env_id)
+            self.status_var.set(f"Detected model environment: {compatible_env_id}")
+
         self.start_run(use_model=True)
 
     def run_random_policy(self) -> None:
@@ -307,14 +386,20 @@ class PendulumViewerApp(tk.Tk):
             lower_bound = None
             load_error: Exception | None = None
 
+            env_create_error: Exception | None = None
+
             for candidate_env_id in env_candidates:
-                if use_2d:
-                    candidate_env = gym.make(candidate_env_id)
-                else:
-                    try:
-                        candidate_env = gym.make(candidate_env_id, render_mode="human", width=1280, height=720)
-                    except TypeError:
-                        candidate_env = gym.make(candidate_env_id, render_mode="human")
+                try:
+                    if use_2d:
+                        candidate_env = gym.make(candidate_env_id)
+                    else:
+                        try:
+                            candidate_env = gym.make(candidate_env_id, render_mode="human", width=1280, height=720)
+                        except TypeError:
+                            candidate_env = gym.make(candidate_env_id, render_mode="human")
+                except Exception as exc:  # noqa: BLE001
+                    env_create_error = exc
+                    continue
                 if not isinstance(candidate_env.action_space, gym.spaces.Box):
                     candidate_env.close()
                     continue
@@ -351,8 +436,13 @@ class PendulumViewerApp(tk.Tk):
                     raise ValueError(
                         "Could not load this model for any supported environment shape "
                         "(InvertedDoublePendulum-v5 or Pendulum-v1). "
-                        f"Last error: {load_error}"
+                        f"Last error: {self._summarize_exception(load_error)}"
                     ) from load_error
+                if env_create_error is not None:
+                    raise ValueError(
+                        "Could not create a supported continuous-control environment for viewer. "
+                        f"Last environment error: {env_create_error}"
+                    ) from env_create_error
                 raise ValueError("Could not create a supported continuous-control environment for viewer.")
 
             if use_model and resolved_env_id != env_id:
