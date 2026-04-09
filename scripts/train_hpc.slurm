@@ -39,6 +39,7 @@ export TF_CPP_MIN_LOG_LEVEL=2
 EPISODES="${EPISODES:-500}"
 ENV_ID="${ENV_ID:-InvertedTriplePendulum-v0}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts}"
+CHECKPOINT_INTERVAL_EPISODES="${CHECKPOINT_INTERVAL_EPISODES:-1}"
 SEED="${SEED:-42}"
 MAX_STEPS_PER_EPISODE="${MAX_STEPS_PER_EPISODE:-2000}"
 NUM_ENVS="${NUM_ENVS:-1}"
@@ -230,6 +231,7 @@ srun python3 train.py \
   --batch-size "$BATCH_SIZE" \
   --updates-per-step "$UPDATES_PER_STEP" \
   --warmup-steps "$WARMUP_STEPS" \
+  --checkpoint-interval-episodes "$CHECKPOINT_INTERVAL_EPISODES" \
   --noise-start "$NOISE_START" \
   --noise-end "$NOISE_END" \
   --noise-decay-episodes "$NOISE_DECAY_EPISODES" \

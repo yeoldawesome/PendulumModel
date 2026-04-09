@@ -13,7 +13,7 @@ usage() {
   cat <<EOF
 Usage: $0 [options]
 
-Find the newest actor model file and push it to git.
+Find the current job actor model file and push it to git.
 
 Options:
   --job-id <id>          Optional Slurm job id (used to discover output dir from logs)
@@ -25,6 +25,14 @@ Options:
   --git-user-email <mail> Override git user.email for this repo
   -h, --help             Show this help
 EOF
+}
+
+find_newest_actor() {
+  local dir="$1"
+  find "$dir" -maxdepth 1 -type f -name '*_actor.weights.h5' ! -name '*target_actor*' -printf '%T@ %p\n' \
+    | sort -nr \
+    | head -n1 \
+    | awk '{print $2}'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -74,13 +82,15 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -z "$OUTPUT_DIR" && -n "$JOB_ID" ]]; then
+LOG_FILE=""
+if [[ -n "$JOB_ID" ]]; then
   LOG_FILE="logs/ddpg-pendulum-${JOB_ID}.out"
-  if [[ -f "$LOG_FILE" ]]; then
-    PARSED_DIR=$(grep -E '^Output dir:' "$LOG_FILE" | tail -n1 | sed -E 's/^Output dir:[[:space:]]*//')
-    if [[ -n "$PARSED_DIR" ]]; then
-      OUTPUT_DIR="$PARSED_DIR"
-    fi
+fi
+
+if [[ -z "$OUTPUT_DIR" && -n "$LOG_FILE" && -f "$LOG_FILE" ]]; then
+  PARSED_DIR=$(grep -E '^Output dir:' "$LOG_FILE" | tail -n1 | sed -E 's/^Output dir:[[:space:]]*//')
+  if [[ -n "$PARSED_DIR" ]]; then
+    OUTPUT_DIR="$PARSED_DIR"
   fi
 fi
 
@@ -90,7 +100,33 @@ if [[ ! -d "$OUTPUT_DIR" ]]; then
   exit 1
 fi
 
-MODEL_PATH=$(find "$OUTPUT_DIR" -maxdepth 1 -type f -name '*_actor.weights.h5' ! -name '*target_actor*' -printf '%T@ %p\n' | sort -nr | head -n1 | awk '{print $2}')
+MODEL_PATH=""
+if [[ -n "$LOG_FILE" && -f "$LOG_FILE" ]]; then
+  # Prefer exact latest checkpoint path emitted by the running trainer.
+  LOG_CHECKPOINT_PATH=$(grep -E '^Checkpoint saved:' "$LOG_FILE" | tail -n1 | sed -E 's/^Checkpoint saved:[[:space:]]*//')
+  if [[ -n "$LOG_CHECKPOINT_PATH" && -f "$LOG_CHECKPOINT_PATH" ]]; then
+    MODEL_PATH="$LOG_CHECKPOINT_PATH"
+    echo "Using logged checkpoint path: $MODEL_PATH"
+  fi
+
+  if [[ -z "$MODEL_PATH" ]]; then
+    LAST_EPISODE=$(grep -Eo 'Episode[[:space:]]+[0-9]+/[0-9]+' "$LOG_FILE" | tail -n1 | sed -E 's/^Episode[[:space:]]+([0-9]+)\/[0-9]+$/\1/')
+    if [[ -n "$LAST_EPISODE" ]]; then
+      MODEL_PATH=$(find "$OUTPUT_DIR" -maxdepth 1 -type f -name "*_ep${LAST_EPISODE}_*_actor.weights.h5" ! -name '*target_actor*' -printf '%T@ %p\n' | sort -nr | head -n1 | awk '{print $2}')
+      if [[ -n "$MODEL_PATH" ]]; then
+        echo "Using episode-matched checkpoint for episode ${LAST_EPISODE}: $MODEL_PATH"
+      fi
+    fi
+  fi
+fi
+
+if [[ -z "$MODEL_PATH" ]]; then
+  MODEL_PATH=$(find_newest_actor "$OUTPUT_DIR")
+  if [[ -n "$MODEL_PATH" ]]; then
+    echo "Falling back to newest actor file: $MODEL_PATH"
+  fi
+fi
+
 if [[ -z "$MODEL_PATH" ]]; then
   echo "No actor model file found in $OUTPUT_DIR" >&2
   exit 1
