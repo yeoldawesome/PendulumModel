@@ -11,7 +11,6 @@ bash scripts/get_progress.sh
 
 bash scripts/get_model_progress.sh
 
-
 bash scripts/watch_running_job_logs.sh
 
 bash scripts/submit_and_watch_hpc.sh --episodes 2000 --env-id InvertedTriplePendulum-v0 --resume-actor-weights artifacts/YOUR_ACTOR.weights.h5 --resume-episode-offset 335
