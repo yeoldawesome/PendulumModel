@@ -113,23 +113,49 @@ find_best_eval_checkpoint() {
     NR==1 {
       for (i = 1; i <= NF; i++) {
         if ($i == "episode") episode_col = i
+        if ($i == "success_at_100_rate") s100_col = i
+        if ($i == "success_at_50_rate") s50_col = i
+        if ($i == "success_at_300_rate") s300_col = i
+        if ($i == "avg_time_to_failure_steps") ttf_col = i
+        if ($i == "avg_resets_per_episode") resets_col = i
         if ($i == "mean_return") mean_col = i
       }
       next
     }
-    NR > 1 && episode_col > 0 && mean_col > 0 {
-      if ($(episode_col) == "" || $(mean_col) == "") next
+    NR > 1 && episode_col > 0 {
+      if ($(episode_col) == "") next
       ep = $(episode_col) + 0
-      mean = $(mean_col) + 0
-      if (!seen || mean > best_mean || (mean == best_mean && ep > best_ep)) {
+      s100 = (s100_col > 0 && $(s100_col) != "") ? ($(s100_col) + 0) : -1
+      s50 = (s50_col > 0 && $(s50_col) != "") ? ($(s50_col) + 0) : -1
+      s300 = (s300_col > 0 && $(s300_col) != "") ? ($(s300_col) + 0) : -1
+      ttf = (ttf_col > 0 && $(ttf_col) != "") ? ($(ttf_col) + 0) : -1
+      resets = (resets_col > 0 && $(resets_col) != "") ? ($(resets_col) + 0) : 999999
+      mean = (mean_col > 0 && $(mean_col) != "") ? ($(mean_col) + 0) : -999999
+
+      # Balance-first ranking:
+      # 1) success@100, 2) success@50 (or success@300 fallback), 3) avg time-to-failure,
+      # 4) fewer resets, 5) mean return, 6) newer episode.
+      s50_or_fallback = (s50 >= 0) ? s50 : s300
+
+      if (!seen \
+          || s100 > best_s100 \
+          || (s100 == best_s100 && s50_or_fallback > best_s50) \
+          || (s100 == best_s100 && s50_or_fallback == best_s50 && ttf > best_ttf) \
+          || (s100 == best_s100 && s50_or_fallback == best_s50 && ttf == best_ttf && resets < best_resets) \
+          || (s100 == best_s100 && s50_or_fallback == best_s50 && ttf == best_ttf && resets == best_resets && mean > best_mean) \
+          || (s100 == best_s100 && s50_or_fallback == best_s50 && ttf == best_ttf && resets == best_resets && mean == best_mean && ep > best_ep)) {
         seen = 1
+        best_s100 = s100
+        best_s50 = s50_or_fallback
+        best_ttf = ttf
+        best_resets = resets
         best_mean = mean
         best_ep = ep
       }
     }
     END {
       if (seen) {
-        printf "%d|%.10f", best_ep, best_mean
+        printf "%d|%.10f|%.10f|%.10f|%.10f", best_ep, best_s100, best_ttf, best_resets, best_mean
       }
     }
   ' "$newest_csv")"
@@ -140,9 +166,18 @@ find_best_eval_checkpoint() {
   fi
 
   local best_ep
+  local best_s100
+  local best_ttf
+  local best_resets
   local best_mean
   best_ep="${best_eval_line%%|*}"
-  best_mean="${best_eval_line##*|}"
+  REST_LINE="${best_eval_line#*|}"
+  best_s100="${REST_LINE%%|*}"
+  REST_LINE="${REST_LINE#*|}"
+  best_ttf="${REST_LINE%%|*}"
+  REST_LINE="${REST_LINE#*|}"
+  best_resets="${REST_LINE%%|*}"
+  best_mean="${REST_LINE##*|}"
   local best_file=""
 
   shopt -s nullglob
@@ -164,7 +199,7 @@ find_best_eval_checkpoint() {
     return
   fi
 
-  echo "$best_file|$best_ep|$newest_csv|$best_mean"
+  echo "$best_file|$best_ep|$newest_csv|$best_s100|$best_ttf|$best_resets|$best_mean"
 }
 
 env_to_slug() {
@@ -250,10 +285,16 @@ if [[ "$SELECT_MODE" == "best-eval" ]]; then
     BEST_EP="${REST%%|*}"
     REST="${REST#*|}"
     SOURCE_CSV="${REST%%|*}"
+    REST="${REST#*|}"
+    BEST_S100="${REST%%|*}"
+    REST="${REST#*|}"
+    BEST_TTF="${REST%%|*}"
+    REST="${REST#*|}"
+    BEST_RESETS="${REST%%|*}"
     BEST_MEAN="${REST##*|}"
     echo "Selection mode: best-eval"
     echo "Source eval CSV: $SOURCE_CSV"
-    echo "Best eval mean return: $BEST_MEAN (episode $BEST_EP)"
+    echo "Best balance snapshot: success@100=$BEST_S100, avg_ttf=$BEST_TTF, avg_resets=$BEST_RESETS, mean_return=$BEST_MEAN (episode $BEST_EP)"
   else
     echo "No usable eval CSV/checkpoint mapping found. Falling back to latest checkpoint selection."
   fi

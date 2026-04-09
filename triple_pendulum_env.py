@@ -26,10 +26,8 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
         self.gravity = 9.81
         self.step_count = 0
 
-        # Reward shaping tuned for sustained upright balance, even with aggressive corrections.
-        self.base_reward = 10.0
-        self.terminal_penalty = 100.0
-        self.stability_bonus = 1.5
+        # Balance-first shaping: maximize upright hold time rather than smoothness or return spikes.
+        self.terminal_penalty = 150.0
 
         # Internal state: x, x_dot, theta1, theta2, theta3, theta1_dot, theta2_dot, theta3_dot
         self.state = np.zeros(8, dtype=np.float32)
@@ -111,27 +109,32 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
 
         self.state = np.array([x, x_dot, t1, t2, t3, t1_dot, t2_dot, t3_dot], dtype=np.float32)
 
-        # Use (1 - cos(theta)) so reward is smooth near upright and periodic over angle wrap.
-        angle_cost = 8.0 * (1.0 - math.cos(t1)) + 10.0 * (1.0 - math.cos(t2)) + 12.0 * (1.0 - math.cos(t3))
-        cart_cost = 1.8 * (x**2)
-        # No motion-effort penalties: aggressive corrections are fully allowed.
-        vel_cost = 0.0
-        action_cost = 0.0
-
-        is_stable = (
-            abs(t1) < 0.15
-            and abs(t2) < 0.15
-            and abs(t3) < 0.15
-            and abs(t1_dot) < 1.0
-            and abs(t2_dot) < 1.0
-            and abs(t3_dot) < 1.0
-            and abs(x) < 0.5
-            and abs(x_dot) < 1.0
+        # Dense upright-survival reward bands:
+        # - tight upright zone gets high reward
+        # - loose upright zone gets moderate reward
+        # - outside gets slight penalty
+        tight_upright = (
+            abs(t1) < 0.20
+            and abs(t2) < 0.20
+            and abs(t3) < 0.20
+            and abs(x) < 0.60
         )
-        stable_bonus = self.stability_bonus if is_stable else 0.0
+        loose_upright = (
+            abs(t1) < 0.50
+            and abs(t2) < 0.50
+            and abs(t3) < 0.50
+            and abs(x) < 1.20
+        )
 
-        cost = cart_cost + angle_cost + vel_cost + action_cost
-        reward = float(self.base_reward - cost + stable_bonus)
+        if tight_upright:
+            reward = 2.0
+        elif loose_upright:
+            reward = 0.5
+        else:
+            reward = -0.2
+
+        # Small positional drift penalty encourages staying centered while still prioritizing balance.
+        reward -= 0.03 * abs(x)
 
         terminated = bool(abs(x) > 2.4 or abs(t1) > 2.75 or abs(t2) > 2.75 or abs(t3) > 2.75)
         if terminated:

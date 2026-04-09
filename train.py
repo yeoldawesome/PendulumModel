@@ -383,8 +383,8 @@ def run_deterministic_evaluation(
                 if terminated or truncated:
                     if first_failure_step == max_steps:
                         first_failure_step = step_idx + 1
-                    resets += 1
-                    state, _ = eval_env.reset(seed=seed + eval_idx * 100000 + step_idx + 1)
+                    resets = 1
+                    break
 
             returns.append(total_reward)
             resets_per_episode.append(resets)
@@ -738,6 +738,8 @@ def main() -> None:
     best_train_episode = -1
     best_eval_mean_return = float("-inf")
     best_eval_episode = -1
+    best_eval_balance_key: tuple[float, float, float, float, float, float] | None = None
+    best_eval_balance_episode = -1
     best_eval_continuous_steps = float("-inf")
     best_eval_continuous_episode = -1
     best_actor_weights = None
@@ -1020,10 +1022,32 @@ def main() -> None:
                     flush=True,
                 )
 
+            candidate_balance_key = (
+                eval_metrics["success_at_100_rate"],
+                eval_metrics["success_at_50_rate"],
+                eval_metrics["success_at_10_rate"],
+                eval_metrics["avg_time_to_failure_steps"],
+                -eval_metrics["avg_resets_per_episode"],
+                eval_metrics["mean_return"],
+            )
+            if best_eval_balance_key is None or candidate_balance_key > best_eval_balance_key:
+                best_eval_balance_key = candidate_balance_key
+                best_eval_balance_episode = global_episode
+                best_actor_weights = actor_model.get_weights()
+                print(
+                    (
+                        "New best checkpoint by balance objective: "
+                        f"episode {global_episode} "
+                        f"(success@100={100.0 * eval_metrics['success_at_100_rate']:.1f}%, "
+                        f"avg_ttf={eval_metrics['avg_time_to_failure_steps']:.1f}, "
+                        f"avg_resets={eval_metrics['avg_resets_per_episode']:.2f})"
+                    ),
+                    flush=True,
+                )
+
             if eval_metrics["mean_return"] > best_eval_mean_return:
                 best_eval_mean_return = eval_metrics["mean_return"]
                 best_eval_episode = global_episode
-                best_actor_weights = actor_model.get_weights()
                 print(
                     f"New best checkpoint by eval mean return: episode {global_episode} ({best_eval_mean_return:.2f})",
                     flush=True,
@@ -1104,6 +1128,16 @@ def main() -> None:
             "eval_max_steps": args.eval_max_steps,
             "best_eval_mean_return": best_eval_mean_return if best_eval_mean_return > float("-inf") else None,
             "best_eval_episode": best_eval_episode if best_eval_episode > 0 else None,
+            "best_eval_balance_episode": best_eval_balance_episode if best_eval_balance_episode > 0 else None,
+            "best_eval_balance_success_at_100_rate": (
+                best_eval_balance_key[0] if best_eval_balance_key is not None else None
+            ),
+            "best_eval_balance_success_at_50_rate": (
+                best_eval_balance_key[1] if best_eval_balance_key is not None else None
+            ),
+            "best_eval_balance_success_at_10_rate": (
+                best_eval_balance_key[2] if best_eval_balance_key is not None else None
+            ),
             "best_eval_avg_time_to_failure_steps": (
                 best_eval_continuous_steps if best_eval_continuous_steps > float("-inf") else None
             ),

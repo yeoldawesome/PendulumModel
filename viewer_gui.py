@@ -628,8 +628,22 @@ class PendulumViewerApp(tk.Tk):
             return ""
 
         avg_rewards = [float(np.mean(hist)) for hist in reward_histories]
-        leader_idx = int(np.argmax(avg_rewards))
-        lines: list[str] = [f"Leader by avg reward: {labels[leader_idx]} ({avg_rewards[leader_idx]:.1f})"]
+        avg_balances = [float(np.mean(hist)) for hist in balance_histories]
+        avg_streaks = [float(np.mean(hist)) for hist in best_streak_histories]
+        avg_resets = [float(np.mean(hist)) for hist in reset_histories]
+        balance_scores = [bal + 0.5 * streak - 8.0 * reset for bal, streak, reset in zip(avg_balances, avg_streaks, avg_resets)]
+
+        leader_idx = int(np.argmax(balance_scores))
+        lines: list[str] = [
+            (
+                "Leader by balance score: "
+                f"{labels[leader_idx]} "
+                f"(score={balance_scores[leader_idx]:.2f}, "
+                f"avg_balance={avg_balances[leader_idx]:.1f}, "
+                f"avg_streak={avg_streaks[leader_idx]:.1f}, "
+                f"avg_resets={avg_resets[leader_idx]:.2f})"
+            )
+        ]
 
         for idx, label in enumerate(labels):
             lines.append(
