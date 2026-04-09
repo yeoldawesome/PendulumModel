@@ -9,8 +9,14 @@ bash scripts/submit_and_watch_hpc.sh
 
 bash scripts/get_progress.sh
 
+bash scripts/get_model_progress.sh
+
+
 bash scripts/watch_running_job_logs.sh
 
+bash scripts/submit_and_watch_hpc.sh --episodes 2000 --env-id InvertedTriplePendulum-v0 --resume-actor-weights artifacts/YOUR_ACTOR.weights.h5 --resume-episode-offset 335
+
+bash scripts/submit_resume_latest_hpc.sh --episodes 2000 --env-id InvertedTriplePendulum-v0
 
 ssh dnlong5@nova.its.iastate.edu
 
@@ -45,7 +51,6 @@ Note: replace YYYYMMDD_HHMMSS with your real checkpoint timestamp.
 Find the real filename with: ls artifacts/*ep335*actor.weights.h5
 
 HPC (force offset manually if filename does not include episode number):
-bash scripts/submit_and_watch_hpc.sh --episodes 2000 --env-id InvertedTriplePendulum-v0 --resume-actor-weights artifacts/YOUR_ACTOR.weights.h5 --resume-episode-offset 335
 
 HPC (auto-pick highest episode checkpoint so you do not paste filenames each time):
 bash scripts/submit_resume_latest_hpc.sh --episodes 2000 --env-id InvertedTriplePendulum-v0

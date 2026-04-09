@@ -597,6 +597,24 @@ def main() -> None:
 
     run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     env_slug = make_env_slug(resolved_env_id)
+    eval_live_csv_name = f"model_pendulum_j{args.joints}_{run_stamp}_{env_slug}_eval_metrics.csv"
+    eval_live_csv_path = output_dir / eval_live_csv_name
+    eval_fieldnames = [
+        "episode",
+        "mean_return",
+        "median_return",
+        "return_std",
+        "return_stderr",
+        "return_ci95_low",
+        "return_ci95_high",
+        "success_rate",
+        "success_ci95_low",
+        "success_ci95_high",
+        "avg_time_to_failure_steps",
+        "avg_resets_per_episode",
+        "eval_episodes",
+        "eval_max_steps",
+    ]
 
     def save_actor_checkpoint(episode_number: int) -> pathlib.Path:
         checkpoint_path = output_dir / f"model_pendulum_j{args.joints}_ep{episode_number}_{run_stamp}_{env_slug}_actor.weights.h5"
@@ -613,6 +631,15 @@ def main() -> None:
     best_eval_episode = -1
     best_actor_weights = None
     eval_rows: list[dict[str, float | int]] = []
+
+    def write_eval_metrics_csv(path: pathlib.Path) -> None:
+        if not eval_rows:
+            return
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=eval_fieldnames)
+            writer.writeheader()
+            writer.writerows(eval_rows)
+
     total_env_steps = 0
     latest_checkpoint_path: pathlib.Path | None = None
     for episode in range(cfg.total_episodes):
@@ -784,6 +811,9 @@ def main() -> None:
                     flush=True,
                 )
 
+            write_eval_metrics_csv(eval_live_csv_path)
+            print(f"Saved eval metrics CSV: {eval_live_csv_path}", flush=True)
+
         if cfg.checkpoint_interval_episodes > 0 and global_episode % cfg.checkpoint_interval_episodes == 0:
             checkpoint_path = save_actor_checkpoint(global_episode)
             if latest_checkpoint_path is not None and latest_checkpoint_path != checkpoint_path and latest_checkpoint_path.exists():
@@ -799,26 +829,7 @@ def main() -> None:
     eval_metrics_csv_path = output_dir / eval_metrics_csv_name
 
     if eval_rows:
-        eval_fieldnames = [
-            "episode",
-            "mean_return",
-            "median_return",
-            "return_std",
-            "return_stderr",
-            "return_ci95_low",
-            "return_ci95_high",
-            "success_rate",
-            "success_ci95_low",
-            "success_ci95_high",
-            "avg_time_to_failure_steps",
-            "avg_resets_per_episode",
-            "eval_episodes",
-            "eval_max_steps",
-        ]
-        with eval_metrics_csv_path.open("w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=eval_fieldnames)
-            writer.writeheader()
-            writer.writerows(eval_rows)
+        write_eval_metrics_csv(eval_metrics_csv_path)
         print(f"Saved eval metrics CSV: {eval_metrics_csv_path}", flush=True)
 
     actor_path = output_dir / f"{artifact_prefix}_actor.weights.h5"
