@@ -9,8 +9,8 @@ bash scripts/submit_and_watch_hpc.sh
 
 bash scripts/get_progress.sh
 
-
 bash scripts/watch_running_job_logs.sh
+
 
 ssh dnlong5@nova.its.iastate.edu
 
@@ -36,3 +36,16 @@ Practical note:
 
 Triple uses your custom repo env and should run without MuJoCo.
 Double uses MuJoCo Gym env, so it needs MuJoCo dependencies available on the HPC job environment.
+
+
+Continue training from an existing checkpoint:
+HPC (auto-infers episode offset from filename if it contains _ep335_):
+bash scripts/submit_and_watch_hpc.sh --episodes 2000 --env-id InvertedTriplePendulum-v0 --resume-actor-weights artifacts/model_pendulum_j3_ep335_YYYYMMDD_HHMMSS_invertedtriplependulum_v0_actor.weights.h5
+Note: replace YYYYMMDD_HHMMSS with your real checkpoint timestamp.
+Find the real filename with: ls artifacts/*ep335*actor.weights.h5
+
+HPC (force offset manually if filename does not include episode number):
+bash scripts/submit_and_watch_hpc.sh --episodes 2000 --env-id InvertedTriplePendulum-v0 --resume-actor-weights artifacts/YOUR_ACTOR.weights.h5 --resume-episode-offset 335
+
+Local Windows PowerShell:
+Set-Location "c:/Users/dnlon/Downloads/Ai-Class/PendulumModel"; & "c:/Users/dnlon/Downloads/Ai-Class/PendulumModel/.venv/Scripts/python.exe" train.py --episodes 200 --env-id InvertedTriplePendulum-v0 --resume-actor-weights "artifacts/model_pendulum_j3_ep335_YYYYMMDD_HHMMSS_invertedtriplependulum_v0_actor.weights.h5"

@@ -421,8 +421,6 @@ def main() -> None:
     print(f"Warmup steps: {cfg.warmup_steps}")
     print(f"Checkpoint interval episodes: {cfg.checkpoint_interval_episodes}")
     print(f"Save full artifacts: {args.save_full_artifacts}")
-    print(f"Resume actor weights: {resume_actor_weights or '<none>'}")
-    print(f"Resume episode offset: {episode_offset}")
     print(f"Exploration noise: start={cfg.std_dev_start:.3f} end={cfg.std_dev_end:.3f} decay_episodes={cfg.std_dev_decay_episodes}")
     if resolved_env_id.startswith("InvertedDoublePendulum") and args.episodes < 200:
         print("Warning: InvertedDoublePendulum usually needs many more than 200 episodes for clear learning progress.", flush=True)
@@ -466,6 +464,9 @@ def main() -> None:
 
     if episode_offset < 0:
         episode_offset = 0
+
+    print(f"Resume actor weights: {resume_actor_weights or '<none>'}")
+    print(f"Resume episode offset: {episode_offset}")
 
     target_actor.set_weights(actor_model.get_weights())
     target_critic.set_weights(critic_model.get_weights())
