@@ -1,0 +1,2 @@
+episode,mean_return,median_return,return_std,return_stderr,return_ci95_low,return_ci95_high,success_rate,success_ci95_low,success_ci95_high,avg_time_to_failure_steps,avg_resets_per_episode,eval_episodes,eval_max_steps
+426,842.619384765625,842.619384765625,343.913330078125,243.1834478386896,365.9798270017934,1319.2589425294566,0.0,0.0,0.0,71.0,14.5,2,1000
