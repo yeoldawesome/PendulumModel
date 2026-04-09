@@ -113,12 +113,11 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
 
         self.state = np.array([x, x_dot, t1, t2, t3, t1_dot, t2_dot, t3_dot], dtype=np.float32)
 
-        # Hybrid reward: dense upright progress + centered cart + small streak milestone bonuses.
+        # Hybrid reward focused on upright links + small streak milestone bonuses.
         upright_score = (math.cos(t1) + math.cos(t2) + math.cos(t3)) / 3.0
         reward = 0.9 * upright_score
-        reward -= 0.04 * abs(x)
 
-        tight_upright = abs(t1) < 0.25 and abs(t2) < 0.25 and abs(t3) < 0.25 and abs(x) < 0.8
+        tight_upright = abs(t1) < 0.25 and abs(t2) < 0.25 and abs(t3) < 0.25
         if tight_upright:
             reward += 0.35
 
