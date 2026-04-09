@@ -6,6 +6,7 @@ import os
 import pathlib
 import random
 import re
+import subprocess
 from dataclasses import dataclass
 
 os.environ.setdefault("KERAS_BACKEND", "tensorflow")
@@ -338,6 +339,55 @@ def infer_run_stamp_from_weights(path_str: str) -> str | None:
     if not match:
         return None
     return match.group(1)
+
+
+def maybe_auto_push_eval_csv(eval_csv_path: pathlib.Path, episode_number: int) -> None:
+    if os.environ.get("AUTO_PUSH", "0") != "1":
+        return
+
+    def _run_git(args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", *args], check=check, capture_output=True, text=True)
+
+    strict_push = os.environ.get("STRICT_PUSH", "0") == "1"
+    push_remote = os.environ.get("PUSH_REMOTE", "origin").strip() or "origin"
+    push_branch_override = os.environ.get("PUSH_BRANCH", "").strip()
+    git_user_name = os.environ.get("GIT_USER_NAME", "").strip()
+    git_user_email = os.environ.get("GIT_USER_EMAIL", "").strip()
+
+    try:
+        _run_git(["rev-parse", "--is-inside-work-tree"])
+
+        current_branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+        target_branch = push_branch_override or current_branch
+
+        if target_branch and current_branch != target_branch:
+            branch_exists = _run_git(["show-ref", "--verify", "--quiet", f"refs/heads/{target_branch}"], check=False)
+            if branch_exists.returncode == 0:
+                _run_git(["switch", target_branch])
+            else:
+                _run_git(["switch", "-c", target_branch])
+
+        if git_user_name:
+            _run_git(["config", "user.name", git_user_name])
+        if git_user_email:
+            _run_git(["config", "user.email", git_user_email])
+
+        _run_git(["add", "-f", str(eval_csv_path)])
+        staged_has_changes = _run_git(["diff", "--cached", "--quiet"], check=False)
+        if staged_has_changes.returncode == 0:
+            return
+
+        _run_git(["commit", "-m", f"hpc: eval csv update ep {episode_number}"])
+        _run_git(["push", push_remote, target_branch])
+        print(
+            f"Auto-pushed eval CSV update for episode {episode_number} to {push_remote}/{target_branch}",
+            flush=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        message = f"Eval CSV auto-push failed at episode {episode_number}: {exc}"
+        if strict_push:
+            raise RuntimeError(message) from exc
+        print(message, flush=True)
 
 
 def run_deterministic_evaluation(
@@ -1055,6 +1105,7 @@ def main() -> None:
 
             write_eval_metrics_csv(eval_live_csv_path)
             print(f"Saved eval metrics CSV: {eval_live_csv_path}", flush=True)
+            maybe_auto_push_eval_csv(eval_live_csv_path, global_episode)
 
         if cfg.checkpoint_interval_episodes > 0 and global_episode % cfg.checkpoint_interval_episodes == 0:
             checkpoint_path = save_actor_checkpoint(global_episode)
