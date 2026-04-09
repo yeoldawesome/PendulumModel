@@ -8,22 +8,23 @@ set -euo pipefail
 EMAIL="dnlong5@iastate.edu"
 ACCOUNT="s2026.se.4390.01"
 PARTITION="instruction"
+# Speed-first defaults for faster wall-clock throughput.
 EPISODES="1000"
 ENV_ID="InvertedTriplePendulum-v0"
 OUTPUT_DIR="artifacts"
 SEED="42"
-MAX_STEPS_PER_EPISODE="2000"
-NUM_ENVS="12"
-LOG_INTERVAL_STEPS="100"
+MAX_STEPS_PER_EPISODE="1000"
+NUM_ENVS="16"
+LOG_INTERVAL_STEPS="500"
 ACTOR_LR="0.0003"
 CRITIC_LR="0.001"
 BUFFER_CAPACITY="200000"
-BATCH_SIZE="512"
+BATCH_SIZE="1024"
 NOISE_START="0.3"
 NOISE_END="0.05"
 NOISE_DECAY_EPISODES="300"
 GPUS="1"
-CPUS="20"
+CPUS="24"
 SCRIPT_PATH="scripts/train_hpc.slurm"
 AUTO_PUSH="1"
 PUSH_BRANCH=""
@@ -150,28 +151,28 @@ Defaults in this file:
   EMAIL=dnlong5@iastate.edu
   ACCOUNT=s2026.se.4390.01
   PARTITION=instruction
-  EPISODES=500
+  EPISODES=1000
 
 Optional overrides:
   --email       Email address for Slurm notifications
   --account     Slurm account (example: s2026.se.4390.01)
   --partition   Slurm partition (default: instruction)
-  --episodes    Number of DDPG training episodes (default: 500)
+  --episodes    Number of DDPG training episodes (default: 1000)
   --env-id      Gymnasium environment id (default: InvertedTriplePendulum-v0)
   --output-dir  Training output directory (default: artifacts)
   --seed        Training random seed (default: 42)
-  --max-steps   Max env steps per episode (default: 2000)
-  --num-envs    Number of parallel simulation envs (default: 1)
-  --log-interval-steps  Print in-episode progress every N steps (default: 100)
+  --max-steps   Max env steps per episode (default: 1000)
+  --num-envs    Number of parallel simulation envs (default: 16)
+  --log-interval-steps  Print in-episode progress every N steps (default: 500)
   --actor-lr    Actor learning rate (default: 0.0003)
   --critic-lr   Critic learning rate (default: 0.001)
   --buffer-capacity Replay buffer capacity (default: 200000)
-  --batch-size  Replay sample batch size (default: 128)
+  --batch-size  Replay sample batch size (default: 1024)
   --noise-start Initial exploration noise stddev (default: 0.3)
   --noise-end   Final exploration noise stddev (default: 0.05)
   --noise-decay-episodes Episodes to decay exploration noise over (default: 300)
   --gpus        Number of A100 GPUs to request (default: 1)
-  --cpus        CPUs per task (default: 6)
+  --cpus        CPUs per task (default: 24)
   --script      Slurm script path (default: scripts/train_hpc.slurm)
   --push        Auto-commit and push artifacts after successful training (default)
   --no-push     Disable auto-push
