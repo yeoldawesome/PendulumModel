@@ -39,6 +39,7 @@ class DDPGConfig:
     max_steps_per_episode: int = 2000
     updates_per_step: int = 1
     warmup_steps: int = 0
+    checkpoint_interval_episodes: int = 0
 
 
 class OUActionNoise:
@@ -247,6 +248,12 @@ def parse_args() -> argparse.Namespace:
         choices=[0, 1],
         help="Save full training artifacts (1) or only one actor weights file (0, default).",
     )
+    parser.add_argument(
+        "--checkpoint-interval-episodes",
+        type=int,
+        default=1,
+        help="Save actor checkpoints every N episodes (0 disables periodic checkpoints).",
+    )
     return parser.parse_args()
 
 
@@ -326,6 +333,8 @@ def main() -> None:
         raise ValueError("--updates-per-step must be >= 1")
     if args.warmup_steps < 0:
         raise ValueError("--warmup-steps must be >= 0")
+    if args.checkpoint_interval_episodes < 0:
+        raise ValueError("--checkpoint-interval-episodes must be >= 0")
     if args.noise_start < 0 or args.noise_end < 0:
         raise ValueError("--noise-start and --noise-end must be >= 0")
     if args.render and args.num_envs > 1:
@@ -344,6 +353,7 @@ def main() -> None:
         max_steps_per_episode=args.max_steps_per_episode,
         updates_per_step=args.updates_per_step,
         warmup_steps=args.warmup_steps,
+        checkpoint_interval_episodes=args.checkpoint_interval_episodes,
     )
 
     set_seed(args.seed)
@@ -383,6 +393,7 @@ def main() -> None:
     print(f"Batch size: {cfg.batch_size}")
     print(f"Updates per step: {cfg.updates_per_step}")
     print(f"Warmup steps: {cfg.warmup_steps}")
+    print(f"Checkpoint interval episodes: {cfg.checkpoint_interval_episodes}")
     print(f"Save full artifacts: {args.save_full_artifacts}")
     print(f"Exploration noise: start={cfg.std_dev_start:.3f} end={cfg.std_dev_end:.3f} decay_episodes={cfg.std_dev_decay_episodes}")
     if resolved_env_id.startswith("InvertedDoublePendulum") and args.episodes < 200:
@@ -416,6 +427,17 @@ def main() -> None:
         action_dim=num_actions,
     )
 
+    output_dir = pathlib.Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    env_slug = make_env_slug(resolved_env_id)
+
+    def save_actor_checkpoint(episode_number: int) -> pathlib.Path:
+        checkpoint_path = output_dir / f"model_pendulum_j{args.joints}_ep{episode_number}_{run_stamp}_{env_slug}_actor.weights.h5"
+        actor_model.save_weights(checkpoint_path)
+        return checkpoint_path
+
     episodic_rewards: list[float] = []
     rolling_avg_rewards: list[float] = []
     episode_lengths: list[int] = []
@@ -423,6 +445,7 @@ def main() -> None:
     best_episode = -1
     best_actor_weights = None
     total_env_steps = 0
+    latest_checkpoint_path: pathlib.Path | None = None
     for episode in range(cfg.total_episodes):
         print(f"Episode {episode + 1:03d}/{cfg.total_episodes}", flush=True)
         episode_noise = linear_decay(episode, cfg.std_dev_start, cfg.std_dev_end, cfg.std_dev_decay_episodes)
@@ -529,13 +552,14 @@ def main() -> None:
             flush=True,
         )
 
+        if cfg.checkpoint_interval_episodes > 0 and (episode + 1) % cfg.checkpoint_interval_episodes == 0:
+            checkpoint_path = save_actor_checkpoint(episode + 1)
+            if latest_checkpoint_path is not None and latest_checkpoint_path != checkpoint_path and latest_checkpoint_path.exists():
+                latest_checkpoint_path.unlink()
+            latest_checkpoint_path = checkpoint_path
+            print(f"Checkpoint saved: {checkpoint_path}", flush=True)
+
     env.close()
-
-    output_dir = pathlib.Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    env_slug = make_env_slug(resolved_env_id)
     episodes_completed = len(episodic_rewards)
     artifact_prefix = f"model_pendulum_j{args.joints}_ep{episodes_completed}_{run_stamp}_{env_slug}"
 
@@ -577,6 +601,7 @@ def main() -> None:
             "noise_decay_episodes": cfg.std_dev_decay_episodes,
             "updates_per_step": cfg.updates_per_step,
             "warmup_steps": cfg.warmup_steps,
+            "checkpoint_interval_episodes": cfg.checkpoint_interval_episodes,
             "gamma": cfg.gamma,
             "tau": cfg.tau,
             "actor_lr": cfg.actor_lr,

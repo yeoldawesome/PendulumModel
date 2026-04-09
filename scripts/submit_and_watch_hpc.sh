@@ -22,6 +22,7 @@ BUFFER_CAPACITY="200000"
 BATCH_SIZE="1024"
 UPDATES_PER_STEP="4"
 WARMUP_STEPS="4096"
+CHECKPOINT_INTERVAL_EPISODES="1"
 NOISE_START="0.3"
 NOISE_END="0.05"
 NOISE_DECAY_EPISODES="300"
@@ -99,6 +100,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --warmup-steps)
       WARMUP_STEPS="$2"
+      shift 2
+      ;;
+    --checkpoint-interval-episodes)
+      CHECKPOINT_INTERVAL_EPISODES="$2"
       shift 2
       ;;
     --noise-start)
@@ -180,6 +185,7 @@ Optional overrides:
   --batch-size  Replay sample batch size (default: 1024)
   --updates-per-step Gradient updates per env step (default: 4)
   --warmup-steps Replay transitions to collect before training updates (default: 4096)
+  --checkpoint-interval-episodes Save actor checkpoint every N episodes (default: 1)
   --noise-start Initial exploration noise stddev (default: 0.3)
   --noise-end   Final exploration noise stddev (default: 0.05)
   --noise-decay-episodes Episodes to decay exploration noise over (default: 300)
@@ -249,6 +255,7 @@ echo "  buffer-capacity: $BUFFER_CAPACITY"
 echo "  batch-size: $BATCH_SIZE"
 echo "  updates-per-step: $UPDATES_PER_STEP"
 echo "  warmup-steps: $WARMUP_STEPS"
+echo "  checkpoint-interval-episodes: $CHECKPOINT_INTERVAL_EPISODES"
 echo "  noise-start: $NOISE_START"
 echo "  noise-end: $NOISE_END"
 echo "  noise-decay-episodes: $NOISE_DECAY_EPISODES"
@@ -278,7 +285,7 @@ submit_output=$(sbatch \
   --cpus-per-task="$CPUS" \
   --mail-user="$EMAIL" \
   --mail-type=BEGIN,END,FAIL \
-  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",LOG_INTERVAL_STEPS="$LOG_INTERVAL_STEPS",ACTOR_LR="$ACTOR_LR",CRITIC_LR="$CRITIC_LR",BUFFER_CAPACITY="$BUFFER_CAPACITY",BATCH_SIZE="$BATCH_SIZE",UPDATES_PER_STEP="$UPDATES_PER_STEP",WARMUP_STEPS="$WARMUP_STEPS",NOISE_START="$NOISE_START",NOISE_END="$NOISE_END",NOISE_DECAY_EPISODES="$NOISE_DECAY_EPISODES",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
+  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",LOG_INTERVAL_STEPS="$LOG_INTERVAL_STEPS",ACTOR_LR="$ACTOR_LR",CRITIC_LR="$CRITIC_LR",BUFFER_CAPACITY="$BUFFER_CAPACITY",BATCH_SIZE="$BATCH_SIZE",UPDATES_PER_STEP="$UPDATES_PER_STEP",WARMUP_STEPS="$WARMUP_STEPS",CHECKPOINT_INTERVAL_EPISODES="$CHECKPOINT_INTERVAL_EPISODES",NOISE_START="$NOISE_START",NOISE_END="$NOISE_END",NOISE_DECAY_EPISODES="$NOISE_DECAY_EPISODES",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
   "$SCRIPT_PATH")
 
 echo "$submit_output"
