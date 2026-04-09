@@ -7,7 +7,8 @@ bash scripts/train_hpc.sh --force
 
 bash scripts/submit_and_watch_hpc.sh
 
-bash scripts/get_progress.sh
+bash scripts/get_progress.sh   
+has csv^
 
 bash scripts/get_model_progress.sh
 

@@ -16,6 +16,10 @@ ENV_ID="InvertedTriplePendulum-v0"
 MATCH_ANY_ENV=0
 PRINT_ONLY=0
 SELECT_MODE="best-eval"
+USE_EXPLORATION_PROFILE=1
+EXPLORE_NOISE_START="0.20"
+EXPLORE_NOISE_END="0.08"
+EXPLORE_NOISE_DECAY_EPISODES="3000"
 
 usage() {
   cat <<EOF
@@ -25,6 +29,14 @@ Helper options:
   --artifacts-dir DIR   Directory to scan for actor checkpoints (default: artifacts)
   --env-id ENV          Environment id used for filtering + submit (default: InvertedTriplePendulum-v0)
   --select-mode MODE    Checkpoint selection mode: best-eval (default) or latest
+  --no-exploration-profile
+                       Disable default resume exploration tuning.
+  --explore-noise-start VALUE
+                       Exploration profile noise-start (default: 0.20)
+  --explore-noise-end VALUE
+                       Exploration profile noise-end (default: 0.08)
+  --explore-noise-decay-episodes N
+                       Exploration profile noise-decay-episodes (default: 3000)
   --match-any-env       Do not filter by env slug when selecting checkpoints/CSV files
   --print-only          Print resolved command without submitting
   -h, --help            Show help
@@ -185,6 +197,22 @@ while [[ $# -gt 0 ]]; do
       SELECT_MODE="$2"
       shift 2
       ;;
+    --no-exploration-profile)
+      USE_EXPLORATION_PROFILE=0
+      shift
+      ;;
+    --explore-noise-start)
+      EXPLORE_NOISE_START="$2"
+      shift 2
+      ;;
+    --explore-noise-end)
+      EXPLORE_NOISE_END="$2"
+      shift 2
+      ;;
+    --explore-noise-decay-episodes)
+      EXPLORE_NOISE_DECAY_EPISODES="$2"
+      shift 2
+      ;;
     --print-only)
       PRINT_ONLY=1
       shift
@@ -249,6 +277,11 @@ fi
 
 echo "Selected checkpoint: $BEST_FILE"
 echo "Detected episode offset: $BEST_EP"
+if [[ "$USE_EXPLORATION_PROFILE" -eq 1 ]]; then
+  echo "Exploration profile: noise-start=$EXPLORE_NOISE_START noise-end=$EXPLORE_NOISE_END noise-decay-episodes=$EXPLORE_NOISE_DECAY_EPISODES"
+else
+  echo "Exploration profile: disabled"
+fi
 
 CMD=(
   bash scripts/submit_and_watch_hpc.sh
@@ -256,6 +289,14 @@ CMD=(
   --resume-actor-weights "$BEST_FILE"
   --resume-episode-offset "$BEST_EP"
 )
+
+if [[ "$USE_EXPLORATION_PROFILE" -eq 1 ]]; then
+  CMD+=(
+    --noise-start "$EXPLORE_NOISE_START"
+    --noise-end "$EXPLORE_NOISE_END"
+    --noise-decay-episodes "$EXPLORE_NOISE_DECAY_EPISODES"
+  )
+fi
 
 if [[ "${#PASSTHROUGH[@]}" -gt 0 ]]; then
   CMD+=("${PASSTHROUGH[@]}")

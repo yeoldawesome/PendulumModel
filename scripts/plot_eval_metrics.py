@@ -6,19 +6,25 @@ import sys
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot evaluation trends from train.py eval metrics CSV.")
-    parser.add_argument("csv_path", type=str, help="Path to *_eval_metrics.csv file.")
+    parser.add_argument(
+        "csv_path",
+        type=str,
+        nargs="?",
+        default="",
+        help="Path to *_eval_metrics.csv file. If omitted, uses newest file in artifacts/.",
+    )
     parser.add_argument(
         "--output",
         type=str,
         default="",
-        help="Optional output image path. Defaults to <csv_stem>_plot.png next to CSV.",
+        help="Optional output image path. If omitted, no PNG is written.",
     )
     parser.add_argument(
         "--show",
         type=int,
-        default=0,
+        default=1,
         choices=[0, 1],
-        help="Show interactive plot window (1) or only save file (0).",
+        help="Show interactive plot window (1, default) or skip display (0).",
     )
     return parser.parse_args()
 
@@ -47,9 +53,16 @@ def read_eval_rows(csv_path: pathlib.Path) -> list[dict[str, float]]:
 
 def main() -> None:
     args = parse_args()
-    csv_path = pathlib.Path(args.csv_path)
-    if not csv_path.exists():
-        raise FileNotFoundError(f"CSV file not found: {csv_path}")
+    if args.csv_path:
+        csv_path = pathlib.Path(args.csv_path)
+        if not csv_path.exists():
+            raise FileNotFoundError(f"CSV file not found: {csv_path}")
+    else:
+        candidates = sorted(pathlib.Path("artifacts").glob("*_eval_metrics.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not candidates:
+            raise FileNotFoundError("No *_eval_metrics.csv files found in artifacts/. Provide csv_path explicitly.")
+        csv_path = candidates[0]
+        print(f"Using latest eval CSV: {csv_path}")
 
     rows = read_eval_rows(csv_path)
     if not rows:
@@ -108,9 +121,10 @@ def main() -> None:
     ax.set_ylabel("Resets")
     ax.grid(True, alpha=0.3)
 
-    output_path = pathlib.Path(args.output) if args.output else csv_path.with_name(f"{csv_path.stem}_plot.png")
-    fig.savefig(output_path, dpi=150)
-    print(f"Saved plot: {output_path}")
+    if args.output:
+        output_path = pathlib.Path(args.output)
+        fig.savefig(output_path, dpi=150)
+        print(f"Saved plot: {output_path}")
 
     if args.show == 1:
         plt.show()
