@@ -163,8 +163,8 @@ class PendulumViewerApp(tk.Tk):
         ttk.Label(container, text="Seed:").grid(row=4, column=2, sticky="e", pady=(8, 0))
         ttk.Entry(container, textvariable=self.seed_var, width=10).grid(row=4, column=3, sticky="w", pady=(8, 0))
 
-        ttk.Label(container, text="Start episode:").grid(row=5, column=2, sticky="e", pady=(8, 0))
-        ttk.Entry(container, textvariable=self.start_episode_var, width=10).grid(row=5, column=3, sticky="w", pady=(8, 0))
+        ttk.Label(container, text="Replay episodes:").grid(row=5, column=2, sticky="e", pady=(8, 0))
+        ttk.Label(container, text="1 (single saved model)").grid(row=5, column=3, sticky="w", pady=(8, 0))
 
         ttk.Checkbutton(container, text="Use 2D visualizer", variable=self.use_2d_var).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
@@ -230,9 +230,14 @@ class PendulumViewerApp(tk.Tk):
             messagebox.showerror("Missing model", "Selected model file does not exist.")
             return
 
+        resolved_model_path = model_path
+        self.model_var.set(resolved_model_path)
+        self.start_episode_var.set("1")
+        self.episodes_var.set("1")
+
         guessed_joints = self._guess_joints_from_model_path(model_path)
         preferred_env_id = JOINTS_TO_ENV_ID.get(guessed_joints) if guessed_joints is not None else None
-        compatible_env_id, reason = self._detect_model_compatible_env(model_path, preferred_env_id=preferred_env_id)
+        compatible_env_id, reason = self._detect_model_compatible_env(resolved_model_path, preferred_env_id=preferred_env_id)
         if compatible_env_id is None:
             details = reason or "unknown mismatch"
             if "MuJoCo not installed" in details and "weights shape mismatch" in details:
