@@ -1,6 +1,9 @@
 cd /work/classtmp/$USER/PendulumModel
 git pull --ff-only origin main
 
+git fetch origin
+git reset --hard origin/main
+
 bash scripts/cancel_all_jobs.sh --force
 
 bash scripts/train_hpc.sh --force
@@ -19,7 +22,7 @@ bash scripts/submit_and_watch_hpc.sh --episodes 2000 --env-id InvertedTriplePend
 bash scripts/submit_resume_latest_hpc.sh --episodes 2000 --env-id InvertedTriplePendulum-v0
 
 CONTINUE
-bash scripts/submit_and_watch_hpc.sh --env-id InvertedTriplePendulum-v0 --resume-actor-weights artifacts/model_pendulum_j3_ep1175_20260409_165301_invertedtriplependulum_v0_actor.weights.h5
+bash scripts/submit_and_watch_hpc.sh --env-id InvertedTriplePendulum-v0 --resume-actor-weights artifacts/model_pendulum_j3_ep1175_20260409_165301_invertedtriplependulum_v0_actor.weights
 
 # Fresh restart with tuned defaults (no resume):
 bash scripts/cancel_all_jobs.sh --force
