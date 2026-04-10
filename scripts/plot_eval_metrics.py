@@ -198,6 +198,30 @@ def main() -> None:
         ax.plot(episodes, median_ttf, color="#bcbd22", linestyle="--", label="Median")
     if any(not math.isnan(v) for v in max_ttf):
         ax.plot(episodes, max_ttf, color="#7f7f7f", linestyle=":", label="Max")
+
+
+    # --- Add slope/trend lines for avg, median, max time-to-failure after episode 100 ---
+    import numpy as np
+    ep_arr = np.array(episodes)
+    mask = ep_arr > 100
+
+    # Helper to fit and plot trend line
+    def plot_trend_line(y_arr, label, color, linestyle):
+        y_arr = np.array(y_arr)
+        valid = mask & ~np.isnan(y_arr)
+        x = ep_arr[valid]
+        y = y_arr[valid]
+        if len(x) > 1:
+            coeffs = np.polyfit(x, y, 1)
+            trend = np.polyval(coeffs, x)
+            ax.plot(x, trend, color=color, linestyle=linestyle, linewidth=2, label=label)
+
+    plot_trend_line(ttf, "Avg slope >100ep", "red", "-.")
+    if any(not math.isnan(v) for v in median_ttf):
+        plot_trend_line(median_ttf, "Median slope >100ep", "orange", ":")
+    if any(not math.isnan(v) for v in max_ttf):
+        plot_trend_line(max_ttf, "Max slope >100ep", "green", "--")
+
     ax.set_title("Avg Time-to-Failure")
     ax.set_xlabel("Episode")
     ax.set_ylabel("Steps")

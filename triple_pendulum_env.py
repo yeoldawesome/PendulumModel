@@ -88,7 +88,7 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
         self.step_count += 1
 
         x, x_dot, t1, t2, t3, t1_dot, t2_dot, t3_dot = [float(v) for v in self.state]
-        force = float(np.clip(action, -1.0, 1.0).reshape(-1)[0]) * 15.0
+        force = float(np.clip(action, -1.0, 1.0).reshape(-1)[0]) * 30.0
 
         # Simple coupled dynamics to emulate a cart with three connected inverted links.
         cart_acc = 0.6 * force - 0.2 * x_dot - 0.35 * (math.sin(t1) + math.sin(t2) + math.sin(t3))
