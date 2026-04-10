@@ -90,6 +90,10 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
         x, x_dot, t1, t2, t3, t1_dot, t2_dot, t3_dot = [float(v) for v in self.state]
         force = float(np.clip(action, -1.0, 1.0).reshape(-1)[0]) * 30.0
 
+        # Jitter bonus: reward rapid corrective movements (change in force)
+        if not hasattr(self, 'prev_action'):
+            self.prev_action = 0.0
+
         # Simple coupled dynamics to emulate a cart with three connected inverted links.
         cart_acc = 0.6 * force - 0.2 * x_dot - 0.35 * (math.sin(t1) + math.sin(t2) + math.sin(t3))
 
@@ -121,9 +125,15 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
         if tight_upright:
             reward += 0.35
 
+
         self.survival_streak += 1
         if self.survival_streak % self.survival_bonus_interval == 0:
             reward += self.survival_bonus_value
+
+        # Add jitter bonus to reward
+        jitter_bonus = 0.01 * abs(force - self.prev_action)
+        reward += jitter_bonus
+        self.prev_action = force
 
         terminated = bool(abs(x) > 2.4 or abs(t1) > 2.75 or abs(t2) > 2.75 or abs(t3) > 2.75)
         if terminated:
