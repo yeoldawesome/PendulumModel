@@ -11,7 +11,7 @@
 #SBATCH --job-name=ddpg-pendulum
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
