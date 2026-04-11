@@ -127,8 +127,8 @@ def get_actor(num_states: int, num_actions: int, upper_bound: np.ndarray) -> ker
     last_init = keras.initializers.RandomUniform(minval=-0.003, maxval=0.003)
 
     inputs = layers.Input(shape=(num_states,))
-    x = layers.Dense(256, activation="relu")(inputs)
-    x = layers.Dense(256, activation="relu")(x)
+    x = layers.Dense(512, activation="relu")(inputs)
+    x = layers.Dense(512, activation="relu")(x)
     outputs = layers.Dense(num_actions, activation="tanh", kernel_initializer=last_init)(x)
     outputs = outputs * upper_bound
 
@@ -137,16 +137,16 @@ def get_actor(num_states: int, num_actions: int, upper_bound: np.ndarray) -> ker
 
 def get_critic(num_states: int, num_actions: int) -> keras.Model:
     state_input = layers.Input(shape=(num_states,))
-    state_out = layers.Dense(16, activation="relu")(state_input)
-    state_out = layers.Dense(32, activation="relu")(state_out)
+    state_out = layers.Dense(64, activation="relu")(state_input)
+    state_out = layers.Dense(128, activation="relu")(state_out)
 
     action_input = layers.Input(shape=(num_actions,))
-    action_out = layers.Dense(32, activation="relu")(action_input)
+    action_out = layers.Dense(128, activation="relu")(action_input)
 
     concat = layers.Concatenate()([state_out, action_out])
 
-    x = layers.Dense(256, activation="relu")(concat)
-    x = layers.Dense(256, activation="relu")(x)
+    x = layers.Dense(512, activation="relu")(concat)
+    x = layers.Dense(512, activation="relu")(x)
     outputs = layers.Dense(1)(x)
 
     return keras.Model([state_input, action_input], outputs)

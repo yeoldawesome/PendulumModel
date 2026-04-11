@@ -116,21 +116,22 @@ class InvertedTriplePendulumEnv(gym.Env[np.ndarray, np.ndarray]):
 
         # Hybrid reward focused on upright links + small streak milestone bonuses.
         upright_score = (math.cos(t1) + math.cos(t2) + math.cos(t3)) / 3.0
-        reward = 0.9 * upright_score
+        reward = 1.5 * upright_score  # Stronger upright reward
 
         tight_upright = abs(t1) < 0.25 and abs(t2) < 0.25 and abs(t3) < 0.25
         if tight_upright:
-            reward += 0.35
+            reward += 1.0  # Larger bonus for all upright
 
+        # Survival reward: encourage staying alive
+        reward += 0.1
 
         self.survival_streak += 1
         if self.survival_streak % self.survival_bonus_interval == 0:
             reward += self.survival_bonus_value
 
-
         terminated = bool(abs(x) > 2.4 or abs(t1) > 2.75 or abs(t2) > 2.75 or abs(t3) > 2.75)
         if terminated:
-            reward -= self.terminal_penalty
+            reward -= 250.0  # Larger penalty for falling
             self.survival_streak = 0
 
         truncated = self.step_count >= self.max_episode_steps
