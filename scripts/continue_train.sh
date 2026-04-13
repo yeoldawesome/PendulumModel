@@ -1,9 +1,25 @@
 #!/bin/bash
+
 # continue_train.sh
 # Usage: bash continue_train.sh <model_prefix> <additional_episodes> [extra_train_args]
 # Example: bash continue_train.sh model_pendulum_20260408_173452_ep5000 500 --env-id Pendulum-v1
 
 set -e
+
+# === HPC ENVIRONMENT SETUP (matches train_hpc.slurm) ===
+module purge
+module load python/3.11
+
+WORKDIR="/work/classtmp/$USER/ddpg-pendulum"
+VENV_DIR="$WORKDIR/.venv"
+if [[ ! -d "$VENV_DIR" ]]; then
+  python3 -m venv "$VENV_DIR"
+fi
+source "$VENV_DIR/bin/activate"
+
+# Ensure dependencies are installed
+pip install --upgrade pip
+pip install -r requirements.txt
 
 if [ $# -lt 2 ]; then
   echo "Usage: $0 <model_prefix> <additional_episodes> [extra_train_args]"
