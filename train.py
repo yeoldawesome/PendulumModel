@@ -343,7 +343,7 @@ def main() -> None:
     best_critic_weights = None
     best_target_actor_weights = None
     best_target_critic_weights = None
-    collapse_patience = 10  # Number of evals to tolerate collapse before auto-recover
+    collapse_patience = 40  # Number of evals to tolerate collapse before auto-recover
     collapse_counter = 0
     collapse_threshold = 0.7  # Fraction of best reward considered a collapse
     import csv
