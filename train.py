@@ -343,7 +343,10 @@ def main() -> None:
     best_critic_weights = None
     best_target_actor_weights = None
     best_target_critic_weights = None
-    # Removed auto-recover logic; only keep best checkpoint logic
+    collapse_patience = 40  # Number of evals to tolerate collapse before auto-recover
+    collapse_counter = 0
+    collapse_threshold = 0.7  # Fraction of best reward considered a collapse
+    auto_recover_start = 1000  # Only activate auto-recover after this many episodes
     import csv
     def evaluate_policy(actor_model, env, num_episodes=5, max_steps=2000, seed=42):
         rewards = []
@@ -464,6 +467,21 @@ def main() -> None:
             best_critic_weights = critic_model.get_weights()
             best_target_actor_weights = target_actor.get_weights()
             best_target_critic_weights = target_critic.get_weights()
+            collapse_counter = 0  # Reset collapse counter on new best
+        elif (episode + 1) > auto_recover_start:
+            if avg_reward < collapse_threshold * best_avg_reward:
+                collapse_counter += 1
+                if collapse_counter >= collapse_patience and best_actor_weights is not None:
+                    print(f"Auto-recovering to best model from episode {best_episode} (Avg Reward: {best_avg_reward:.2f}) due to collapse.", flush=True)
+                    actor_model.set_weights(best_actor_weights)
+                    critic_model.set_weights(best_critic_weights)
+                    target_actor.set_weights(best_target_actor_weights)
+                    target_critic.set_weights(best_target_critic_weights)
+                    collapse_counter = 0
+            else:
+                collapse_counter = 0
+        else:
+            collapse_counter = 0
         print(
             f"Episode {episode + 1:03d}/{cfg.total_episodes} | Steps: {episode_steps:04d} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
             flush=True,
