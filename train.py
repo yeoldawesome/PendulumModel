@@ -1,4 +1,7 @@
 import argparse
+
+# Rolling average window for reward smoothing (for auto-recover and CSV)
+ROLLING_AVG_WINDOW = 10
 import datetime as dt
 import json
 import os
@@ -343,7 +346,7 @@ def main() -> None:
     best_critic_weights = None
     best_target_actor_weights = None
     best_target_critic_weights = None
-    collapse_patience = 40  # Number of evals to tolerate collapse before auto-recover
+    collapse_patience = 20  # Number of evals to tolerate collapse before auto-recover
     collapse_counter = 0
     collapse_threshold = 0.7  # Fraction of best reward considered a collapse
     auto_recover_start = 1000  # Only activate auto-recover after this many episodes
@@ -369,16 +372,18 @@ def main() -> None:
             lengths.append(t + 1)
         return np.mean(rewards), np.mean(lengths)
 
-    csv_path = pathlib.Path(args.output_dir) / "progress.csv"
-    csv_header = ["episode", "avg_reward_40", "eval_avg_reward", "eval_avg_length"]
+    output_dir = pathlib.Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    artifact_prefix = f"model_{args.env_id.split('-')[0].lower()}_{run_stamp}_ep{cfg.total_episodes}"
+
+    # Use run-unique CSV and checkpoint names
+    csv_path = output_dir / f"{artifact_prefix}_progress.csv"
+    csv_header = ["episode", f"avg_reward_{ROLLING_AVG_WINDOW}", "eval_avg_reward", "eval_avg_length"]
     if not csv_path.exists():
         with open(csv_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(csv_header)
-
-    output_dir = pathlib.Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     for episode in range(cfg.total_episodes):
         print(f"Episode {episode + 1:03d}/{cfg.total_episodes} started", flush=True)
         episode_noise = linear_decay(episode, cfg.std_dev_start, cfg.std_dev_end, cfg.std_dev_decay_episodes)
@@ -458,7 +463,7 @@ def main() -> None:
             episode_reward = float(np.mean(episode_rewards))
         episodic_rewards.append(episode_reward)
         episode_lengths.append(episode_steps)
-        avg_reward = float(np.mean(episodic_rewards[-40:]))
+        avg_reward = float(np.mean(episodic_rewards[-ROLLING_AVG_WINDOW:]))
         rolling_avg_rewards.append(avg_reward)
         if avg_reward > best_avg_reward:
             best_avg_reward = avg_reward
@@ -483,7 +488,7 @@ def main() -> None:
         else:
             collapse_counter = 0
         print(
-            f"Episode {episode + 1:03d}/{cfg.total_episodes} | Steps: {episode_steps:04d} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
+            f"Episode {episode + 1:03d}/{cfg.total_episodes} | Steps: {episode_steps:04d} | Reward: {episode_reward:.2f} | Avg({ROLLING_AVG_WINDOW}): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
             flush=True,
         )
 
@@ -498,14 +503,14 @@ def main() -> None:
                     writer.writerow(csv_header)
                 writer.writerow([episode + 1, avg_reward, eval_avg_reward, eval_avg_length])
 
-            # Overwrite checkpoint files
+            # Overwrite checkpoint files (run-unique names)
             # Only save checkpoints if the new avg_reward is better than the previous best
             if avg_reward >= best_avg_reward:
                 # Already updated above, so save weights
-                actor_model.save_weights(output_dir / f"{args.checkpoint_name}_actor.weights.h5")
-                critic_model.save_weights(output_dir / f"{args.checkpoint_name}_critic.weights.h5")
-                target_actor.save_weights(output_dir / f"{args.checkpoint_name}_target_actor.weights.h5")
-                target_critic.save_weights(output_dir / f"{args.checkpoint_name}_target_critic.weights.h5")
+                actor_model.save_weights(output_dir / f"{artifact_prefix}_actor.weights.h5")
+                critic_model.save_weights(output_dir / f"{artifact_prefix}_critic.weights.h5")
+                target_actor.save_weights(output_dir / f"{artifact_prefix}_target_actor.weights.h5")
+                target_critic.save_weights(output_dir / f"{artifact_prefix}_target_critic.weights.h5")
                 print(f"Checkpoint updated at episode {episode + 1} (Avg Reward: {avg_reward:.2f})", flush=True)
             else:
                 print(f"Checkpoint NOT updated at episode {episode + 1} (Avg Reward: {avg_reward:.2f} < Best: {best_avg_reward:.2f})", flush=True)
@@ -530,6 +535,7 @@ def main() -> None:
 
     env.close()
 
+
     # At the end, restore the best weights and save them as the final best checkpoint
     if best_actor_weights is not None:
         actor_model.set_weights(best_actor_weights)
@@ -541,8 +547,6 @@ def main() -> None:
         target_actor.save_weights(output_dir / f"{artifact_prefix}_best_target_actor.weights.h5")
         target_critic.save_weights(output_dir / f"{artifact_prefix}_best_target_critic.weights.h5")
         print(f"Best model restored and saved from episode {best_episode} (Avg Reward: {best_avg_reward:.2f})", flush=True)
-
-    artifact_prefix = f"model_pendulum_{run_stamp}_ep{cfg.total_episodes}"
 
     actor_path = output_dir / f"{artifact_prefix}_actor.weights.h5"
     critic_path = output_dir / f"{artifact_prefix}_critic.weights.h5"
@@ -580,10 +584,10 @@ def main() -> None:
         "tau": cfg.tau,
         "actor_lr": cfg.actor_lr,
         "critic_lr": cfg.critic_lr,
-        "best_avg_reward_40": best_avg_reward if best_avg_reward > float("-inf") else None,
+        f"best_avg_reward_{ROLLING_AVG_WINDOW}": best_avg_reward if best_avg_reward > float("-inf") else None,
         "best_episode": best_episode if best_episode > 0 else None,
         "visible_gpus": len(gpus),
-        "final_avg_reward_40": rolling_avg_rewards[-1] if rolling_avg_rewards else None,
+        f"final_avg_reward_{ROLLING_AVG_WINDOW}": rolling_avg_rewards[-1] if rolling_avg_rewards else None,
         "actor_weights": actor_path.name,
         "critic_weights": critic_path.name,
         "target_actor_weights": target_actor_path.name,
@@ -591,13 +595,14 @@ def main() -> None:
         "rewards_file": rewards_path.name,
         "episode_lengths_file": episode_lengths_path.name,
         "best_actor_weights": best_actor_path.name if best_actor_weights is not None else None,
+        "progress_csv": csv_path.name,
     }
 
-    metadata_path = output_dir / "metadata.json"
+    metadata_path = output_dir / f"{artifact_prefix}_metadata.json"
     with metadata_path.open("w", encoding="utf-8") as handle:
         json.dump(metadata, handle, indent=2)
 
-    print(f"Training complete. Artifacts written to: {output_dir}")
+    print(f"Training complete. Artifacts written to: {output_dir}\nRun prefix: {artifact_prefix}")
 
 
 if __name__ == "__main__":

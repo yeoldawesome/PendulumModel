@@ -6,24 +6,25 @@ CSV_PATH = pathlib.Path("artifacts/progress.csv")
 
 def load_progress(csv_path):
     episodes = []
-    avg_rewards_40 = []
+    avg_rewards_10 = []
     eval_avg_rewards = []
     eval_avg_lengths = []
     with open(csv_path, "r", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
             episodes.append(int(row["episode"]))
-            avg_rewards_40.append(float(row["avg_reward_40"]))
+            # If your CSV does not have avg_reward_10, compute it here or update your training script to output it
+            avg_rewards_10.append(float(row.get("avg_reward_10", row["avg_reward_40"])))
             eval_avg_rewards.append(float(row["eval_avg_reward"]))
             eval_avg_lengths.append(float(row["eval_avg_length"]))
-    return episodes, avg_rewards_40, eval_avg_rewards, eval_avg_lengths
+    return episodes, avg_rewards_10, eval_avg_rewards, eval_avg_lengths
 
 def plot_progress(episodes, avg_rewards_40, eval_avg_rewards, eval_avg_lengths):
     import numpy as np
     fig, axs = plt.subplots(2, 1, figsize=(8, 6))
 
     # First graph: Rewards
-    axs[0].plot(episodes, avg_rewards_40, label="Rolling Avg Reward (40)", marker="o")
+    axs[0].plot(episodes, avg_rewards_40, label="Rolling Avg Reward (10)", marker="o")
     axs[0].plot(episodes, eval_avg_rewards, label="Eval Avg Reward", marker="x")
     # Trend lines for rewards
     if len(episodes) > 1:
