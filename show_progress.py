@@ -63,6 +63,16 @@ def plot_progress(episodes, avg_rewards_40, eval_avg_rewards, eval_avg_lengths):
     axs[1].set_ylim(0, 4000)
 
     plt.tight_layout()
+    try:
+        import mplcursors
+        # Attach tooltips to all lines and markers in both subplots
+        cursor = mplcursors.cursor(axs[0].lines + axs[1].lines, hover=True)
+        @cursor.connect("add")
+        def on_add(sel):
+            x, y = sel.target
+            sel.annotation.set_text(f"Episode: {int(x)}\nValue: {y:.2f}")
+    except ImportError:
+        print("mplcursors not installed: run 'pip install mplcursors' for interactive hover tooltips.")
     plt.show()
 
 def main():
