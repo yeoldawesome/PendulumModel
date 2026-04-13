@@ -20,7 +20,7 @@ class DDPGConfig:
     total_episodes: int = 500
     std_dev_start: float = 0.3
     std_dev_end: float = 0.05
-    std_dev_decay_episodes: int = 800  # Slower noise decay for longer exploration
+    std_dev_decay_episodes: int = 1000  # Slower noise decay for longer exploration
     critic_lr: float = 0.001
     actor_lr: float = 0.0003
     gamma: float = 0.99
