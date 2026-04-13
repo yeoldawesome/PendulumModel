@@ -106,8 +106,10 @@ def get_actor(num_states: int, num_actions: int, upper_bound: np.ndarray) -> ker
     last_init = keras.initializers.RandomUniform(minval=-0.003, maxval=0.003)
 
     inputs = layers.Input(shape=(num_states,))
-    x = layers.Dense(256, activation="relu")(inputs)
+    x = layers.Dense(512, activation="relu")(inputs)
+    x = layers.Dense(512, activation="relu")(x)
     x = layers.Dense(256, activation="relu")(x)
+    x = layers.Dense(128, activation="relu")(x)
     outputs = layers.Dense(num_actions, activation="tanh", kernel_initializer=last_init)(x)
     outputs = outputs * upper_bound
 
@@ -116,16 +118,20 @@ def get_actor(num_states: int, num_actions: int, upper_bound: np.ndarray) -> ker
 
 def get_critic(num_states: int, num_actions: int) -> keras.Model:
     state_input = layers.Input(shape=(num_states,))
-    state_out = layers.Dense(16, activation="relu")(state_input)
+    state_out = layers.Dense(64, activation="relu")(state_input)
+    state_out = layers.Dense(64, activation="relu")(state_out)
     state_out = layers.Dense(32, activation="relu")(state_out)
 
     action_input = layers.Input(shape=(num_actions,))
-    action_out = layers.Dense(32, activation="relu")(action_input)
+    action_out = layers.Dense(64, activation="relu")(action_input)
+    action_out = layers.Dense(32, activation="relu")(action_out)
 
     concat = layers.Concatenate()([state_out, action_out])
 
-    x = layers.Dense(256, activation="relu")(concat)
+    x = layers.Dense(512, activation="relu")(concat)
+    x = layers.Dense(512, activation="relu")(x)
     x = layers.Dense(256, activation="relu")(x)
+    x = layers.Dense(128, activation="relu")(x)
     outputs = layers.Dense(1)(x)
 
     return keras.Model([state_input, action_input], outputs)
@@ -332,6 +338,30 @@ def main() -> None:
     best_avg_reward = float("-inf")
     best_episode = -1
     best_actor_weights = None
+    import csv
+    def evaluate_policy(actor_model, env, num_episodes=5, max_steps=2000, seed=42):
+        rewards = []
+        lengths = []
+        for ep in range(num_episodes):
+            state, _ = env.reset(seed=seed + ep)
+            total_reward = 0.0
+            for t in range(max_steps):
+                action = np.squeeze(actor_model(np.expand_dims(state, axis=0), training=False).numpy())
+                state, reward, terminated, truncated, _ = env.step(action)
+                total_reward += reward
+                if terminated or truncated:
+                    break
+            rewards.append(total_reward)
+            lengths.append(t + 1)
+        return np.mean(rewards), np.mean(lengths)
+
+    csv_path = pathlib.Path(args.output_dir) / "progress.csv"
+    csv_header = ["episode", "avg_reward_40", "eval_avg_reward", "eval_avg_length"]
+    if not csv_path.exists():
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(csv_header)
+
     for episode in range(cfg.total_episodes):
         print(f"Episode {episode + 1:03d}/{cfg.total_episodes} started", flush=True)
         episode_noise = linear_decay(episode, cfg.std_dev_start, cfg.std_dev_end, cfg.std_dev_decay_episodes)
@@ -357,7 +387,6 @@ def main() -> None:
                     lower_bound=lower_bound,
                     upper_bound=upper_bound,
                 )
-
                 state, reward, terminated, truncated, _ = env.step(action)
                 replay_buffer.record(prev_state, action, float(reward), state)
                 episode_reward += float(reward)
@@ -369,7 +398,6 @@ def main() -> None:
                     lower_bound=lower_bound,
                     upper_bound=upper_bound,
                 )
-
                 state, reward, terminated, truncated, _ = env.step(actions)
                 replay_buffer.record_batch(prev_state, actions, reward, state)
                 episode_rewards += reward.astype(np.float32)
@@ -389,7 +417,6 @@ def main() -> None:
                     critic_optimizer=critic_optimizer,
                     gamma=cfg.gamma,
                 )
-
                 update_targets(target_actor, actor_model, cfg.tau)
                 update_targets(target_critic, critic_model, cfg.tau)
 
@@ -424,6 +451,30 @@ def main() -> None:
             f"Episode {episode + 1:03d}/{cfg.total_episodes} | Steps: {episode_steps:04d} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
             flush=True,
         )
+
+        # Every 10 episodes: evaluate, log to CSV, save checkpoint, auto-push
+        if (episode + 1) % 10 == 0 or (episode + 1) == cfg.total_episodes:
+            eval_avg_reward, eval_avg_length = evaluate_policy(actor_model, env, num_episodes=5, max_steps=cfg.max_steps_per_episode, seed=args.seed + 10000)
+            with open(csv_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([episode + 1, avg_reward, eval_avg_reward, eval_avg_length])
+
+            # Save checkpoint
+            checkpoint_prefix = f"model_pendulum_{run_stamp}_ep{episode + 1}"
+            actor_model.save_weights(output_dir / f"{checkpoint_prefix}_actor.weights.h5")
+            critic_model.save_weights(output_dir / f"{checkpoint_prefix}_critic.weights.h5")
+            target_actor.save_weights(output_dir / f"{checkpoint_prefix}_target_actor.weights.h5")
+            target_critic.save_weights(output_dir / f"{checkpoint_prefix}_target_critic.weights.h5")
+
+            # Auto-push artifacts if requested
+            if os.environ.get("AUTO_PUSH", "0") == "1":
+                import subprocess
+                try:
+                    subprocess.run(["git", "add", "-f", str(output_dir)], check=True)
+                    subprocess.run(["git", "commit", "-m", f"hpc: checkpoint and progress at episode {episode + 1}"], check=True)
+                    subprocess.run(["git", "push"], check=True)
+                except Exception as e:
+                    print(f"Auto-push failed: {e}", flush=True)
 
     env.close()
 
