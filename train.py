@@ -362,6 +362,7 @@ def main() -> None:
             writer = csv.writer(f)
             writer.writerow(csv_header)
 
+    run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     for episode in range(cfg.total_episodes):
         print(f"Episode {episode + 1:03d}/{cfg.total_episodes} started", flush=True)
         episode_noise = linear_decay(episode, cfg.std_dev_start, cfg.std_dev_end, cfg.std_dev_decay_episodes)
@@ -478,10 +479,6 @@ def main() -> None:
 
     env.close()
 
-    output_dir = pathlib.Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     artifact_prefix = f"model_pendulum_{run_stamp}_ep{cfg.total_episodes}"
 
     actor_path = output_dir / f"{artifact_prefix}_actor.weights.h5"
