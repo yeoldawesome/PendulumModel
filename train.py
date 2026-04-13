@@ -340,6 +340,9 @@ def main() -> None:
     best_avg_reward = float("-inf")
     best_episode = -1
     best_actor_weights = None
+    best_critic_weights = None
+    best_target_actor_weights = None
+    best_target_critic_weights = None
     import csv
     def evaluate_policy(actor_model, env, num_episodes=5, max_steps=2000, seed=42):
         rewards = []
@@ -452,6 +455,9 @@ def main() -> None:
             best_avg_reward = avg_reward
             best_episode = episode + 1
             best_actor_weights = actor_model.get_weights()
+            best_critic_weights = critic_model.get_weights()
+            best_target_actor_weights = target_actor.get_weights()
+            best_target_critic_weights = target_critic.get_weights()
         print(
             f"Episode {episode + 1:03d}/{cfg.total_episodes} | Steps: {episode_steps:04d} | Reward: {episode_reward:.2f} | Avg(40): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
             flush=True,
@@ -469,10 +475,16 @@ def main() -> None:
                 writer.writerow([episode + 1, avg_reward, eval_avg_reward, eval_avg_length])
 
             # Overwrite checkpoint files
-            actor_model.save_weights(output_dir / f"{args.checkpoint_name}_actor.weights.h5")
-            critic_model.save_weights(output_dir / f"{args.checkpoint_name}_critic.weights.h5")
-            target_actor.save_weights(output_dir / f"{args.checkpoint_name}_target_actor.weights.h5")
-            target_critic.save_weights(output_dir / f"{args.checkpoint_name}_target_critic.weights.h5")
+            # Only save checkpoints if the new avg_reward is better than the previous best
+            if avg_reward >= best_avg_reward:
+                # Already updated above, so save weights
+                actor_model.save_weights(output_dir / f"{args.checkpoint_name}_actor.weights.h5")
+                critic_model.save_weights(output_dir / f"{args.checkpoint_name}_critic.weights.h5")
+                target_actor.save_weights(output_dir / f"{args.checkpoint_name}_target_actor.weights.h5")
+                target_critic.save_weights(output_dir / f"{args.checkpoint_name}_target_critic.weights.h5")
+                print(f"Checkpoint updated at episode {episode + 1} (Avg Reward: {avg_reward:.2f})", flush=True)
+            else:
+                print(f"Checkpoint NOT updated at episode {episode + 1} (Avg Reward: {avg_reward:.2f} < Best: {best_avg_reward:.2f})", flush=True)
 
             # Auto-push artifacts if requested
             if os.environ.get("AUTO_PUSH", "0") == "1":
@@ -493,6 +505,18 @@ def main() -> None:
                     print(f"Auto-push failed: {e}", flush=True)
 
     env.close()
+
+    # At the end, restore the best weights and save them as the final best checkpoint
+    if best_actor_weights is not None:
+        actor_model.set_weights(best_actor_weights)
+        critic_model.set_weights(best_critic_weights)
+        target_actor.set_weights(best_target_actor_weights)
+        target_critic.set_weights(best_target_critic_weights)
+        actor_model.save_weights(output_dir / f"{artifact_prefix}_best_actor.weights.h5")
+        critic_model.save_weights(output_dir / f"{artifact_prefix}_best_critic.weights.h5")
+        target_actor.save_weights(output_dir / f"{artifact_prefix}_best_target_actor.weights.h5")
+        target_critic.save_weights(output_dir / f"{artifact_prefix}_best_target_critic.weights.h5")
+        print(f"Best model restored and saved from episode {best_episode} (Avg Reward: {best_avg_reward:.2f})", flush=True)
 
     artifact_prefix = f"model_pendulum_{run_stamp}_ep{cfg.total_episodes}"
 
