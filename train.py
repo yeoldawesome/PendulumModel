@@ -606,6 +606,16 @@ def main() -> None:
     with metadata_path.open("w", encoding="utf-8") as handle:
         json.dump(metadata, handle, indent=2)
 
+    # Also overwrite the original metadata file if continuing from a previous run
+    # Find the original metadata file by looking for a prefix in artifact_prefix
+    # (If this is a continued run, artifact_prefix will contain '_cont_' and the original prefix will be before that)
+    if '_cont_' in artifact_prefix:
+        orig_prefix = artifact_prefix.split('_cont_')[0]
+        orig_metadata_path = output_dir / f"{orig_prefix}_metadata.json"
+        if orig_metadata_path.exists():
+            with orig_metadata_path.open("w", encoding="utf-8") as handle:
+                json.dump(metadata, handle, indent=2)
+
     print(f"Training complete. Artifacts written to: {output_dir}\nRun prefix: {artifact_prefix}")
 
 

@@ -24,4 +24,4 @@ git reset --hard origin/main
 
 bash scripts/continue_train.sh checkpoint 500
 bash scripts/continue_train.sh <model_prefix> <additional_episodes> [extra_train_args]
-bash scripts/continue_train.sh model_pendulum_20260408_173452_ep5000 500 --env-id Pendulum-v1
+bash scripts/continue_train.sh model_inverteddoublependulum_20260412_212409_ep5000 50000
