@@ -362,6 +362,8 @@ def main() -> None:
             writer = csv.writer(f)
             writer.writerow(csv_header)
 
+    output_dir = pathlib.Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     for episode in range(cfg.total_episodes):
         print(f"Episode {episode + 1:03d}/{cfg.total_episodes} started", flush=True)

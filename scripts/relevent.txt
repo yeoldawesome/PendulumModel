@@ -15,3 +15,5 @@ cd /work/classtmp/$USER
 git clone https://github.com/yeoldawesome/PendulumModel.git
 cd PendulumModel
 git pull --ff-only origin main
+
+cat logs/ddpg-pendulum-10401832.err
