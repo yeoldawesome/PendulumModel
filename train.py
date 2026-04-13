@@ -1,4 +1,5 @@
 import argparse
+import csv
 
 # Rolling average window for reward smoothing (for auto-recover and CSV)
 ROLLING_AVG_WINDOW = 10
@@ -182,6 +183,101 @@ def linear_decay(step: int, start: float, end: float, decay_steps: int) -> float
     return (1.0 - alpha) * start + alpha * end
 
 
+def strip_time_limit_wrapper(env: gym.Env) -> gym.Env:
+    while isinstance(env, gym.wrappers.TimeLimit):
+        env = env.env
+    return env
+
+
+def snapshot_weights(
+    actor_model: keras.Model,
+    critic_model: keras.Model,
+    target_actor: keras.Model,
+    target_critic: keras.Model,
+) -> tuple[list[np.ndarray], list[np.ndarray], list[np.ndarray], list[np.ndarray]]:
+    return (
+        actor_model.get_weights(),
+        critic_model.get_weights(),
+        target_actor.get_weights(),
+        target_critic.get_weights(),
+    )
+
+
+def restore_weights(
+    weights: tuple[list[np.ndarray], list[np.ndarray], list[np.ndarray], list[np.ndarray]],
+    actor_model: keras.Model,
+    critic_model: keras.Model,
+    target_actor: keras.Model,
+    target_critic: keras.Model,
+) -> None:
+    actor_weights, critic_weights, target_actor_weights, target_critic_weights = weights
+    actor_model.set_weights(actor_weights)
+    critic_model.set_weights(critic_weights)
+    target_actor.set_weights(target_actor_weights)
+    target_critic.set_weights(target_critic_weights)
+
+
+def get_named_checkpoint_paths(output_dir: pathlib.Path, checkpoint_name: str) -> dict[str, pathlib.Path]:
+    return {
+        "actor": output_dir / f"{checkpoint_name}_actor.weights.h5",
+        "critic": output_dir / f"{checkpoint_name}_critic.weights.h5",
+        "target_actor": output_dir / f"{checkpoint_name}_target_actor.weights.h5",
+        "target_critic": output_dir / f"{checkpoint_name}_target_critic.weights.h5",
+        "state": output_dir / f"{checkpoint_name}_state.json",
+    }
+
+
+def save_named_checkpoint(
+    checkpoint_paths: dict[str, pathlib.Path],
+    actor_model: keras.Model,
+    critic_model: keras.Model,
+    target_actor: keras.Model,
+    target_critic: keras.Model,
+    *,
+    best_avg_reward: float,
+    best_episode: int,
+) -> None:
+    actor_model.save_weights(checkpoint_paths["actor"])
+    critic_model.save_weights(checkpoint_paths["critic"])
+    target_actor.save_weights(checkpoint_paths["target_actor"])
+    target_critic.save_weights(checkpoint_paths["target_critic"])
+
+    state = {
+        "best_avg_reward": best_avg_reward if best_avg_reward > float("-inf") else None,
+        "best_episode": best_episode if best_episode > 0 else None,
+        "saved_at": dt.datetime.now().isoformat(timespec="seconds"),
+    }
+    with checkpoint_paths["state"].open("w", encoding="utf-8") as handle:
+        json.dump(state, handle, indent=2)
+
+
+def maybe_load_named_checkpoint(
+    checkpoint_paths: dict[str, pathlib.Path],
+    actor_model: keras.Model,
+    critic_model: keras.Model,
+    target_actor: keras.Model,
+    target_critic: keras.Model,
+) -> dict[str, float | int | None] | None:
+    required_paths = [
+        checkpoint_paths["actor"],
+        checkpoint_paths["critic"],
+        checkpoint_paths["target_actor"],
+        checkpoint_paths["target_critic"],
+    ]
+    if not all(path.exists() for path in required_paths):
+        return None
+
+    actor_model.load_weights(checkpoint_paths["actor"])
+    critic_model.load_weights(checkpoint_paths["critic"])
+    target_actor.load_weights(checkpoint_paths["target_actor"])
+    target_critic.load_weights(checkpoint_paths["target_critic"])
+
+    if checkpoint_paths["state"].exists():
+        with checkpoint_paths["state"].open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    return {"best_avg_reward": None, "best_episode": None}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train DDPG on a continuous-control Gymnasium environment with Keras.")
     parser.add_argument("--episodes", type=int, default=500, help="Number of training episodes.")
@@ -190,7 +286,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--render", action="store_true", help="Render environment while training (slower; not for HPC).")
     parser.add_argument("--require-gpu", type=int, default=0, choices=[0, 1], help="Exit with error when no GPU is detected.")
-    parser.add_argument("--max-steps-per-episode", type=int, default=4000, help="Maximum environment steps per episode.")
+    parser.add_argument("--max-steps-per-episode", type=int, default=4000, help="Evaluation max steps and fallback cap for vectorized training.")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environment instances for faster simulation.")
     parser.add_argument("--log-interval-steps", type=int, default=100, help="Print in-episode progress every N steps.")
     parser.add_argument("--actor-lr", type=float, default=0.0003, help="Actor learning rate.")
@@ -203,6 +299,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--noise-decay-episodes", type=int, default=300, help="Episodes over which exploration noise decays.")
     parser.add_argument("--eval-period", type=int, default=10, help="How often (episodes) to evaluate and log progress.")
     parser.add_argument("--checkpoint-name", type=str, default="checkpoint", help="Base name for checkpoint model files.")
+    parser.add_argument("--auto-load-checkpoint", type=int, default=1, choices=[0, 1], help="Automatically load the named checkpoint from the output directory before training.")
     return parser.parse_args()
 
 
@@ -250,6 +347,8 @@ def main() -> None:
     args = parse_args()
     if args.num_envs < 1:
         raise ValueError("--num-envs must be >= 1")
+    if args.max_steps_per_episode < 1:
+        raise ValueError("--max-steps-per-episode must be >= 1")
     if args.log_interval_steps < 1:
         raise ValueError("--log-interval-steps must be >= 1")
     if args.batch_size < 1:
@@ -276,14 +375,24 @@ def main() -> None:
 
     set_seed(args.seed)
 
+    output_dir = pathlib.Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    named_checkpoint_paths = get_named_checkpoint_paths(output_dir, args.checkpoint_name)
+
+    train_until_failure = args.num_envs == 1
+
     render_mode = "human" if args.render else None
     if args.num_envs == 1:
         env = gym.make(args.env_id, render_mode=render_mode)
+        if train_until_failure:
+            env = strip_time_limit_wrapper(env)
+        eval_env = gym.make(args.env_id)
         obs_space = env.observation_space
         action_space = env.action_space
     else:
         env_fns = [lambda env_id=args.env_id: gym.make(env_id) for _ in range(args.num_envs)]
         env = gym.vector.AsyncVectorEnv(env_fns)
+        eval_env = gym.make(args.env_id)
         obs_space = env.single_observation_space
         action_space = env.single_action_space
 
@@ -308,6 +417,11 @@ def main() -> None:
     print(f"Replay capacity: {cfg.buffer_capacity}")
     print(f"Batch size: {cfg.batch_size}")
     print(f"Exploration noise: start={cfg.std_dev_start:.3f} end={cfg.std_dev_end:.3f} decay_episodes={cfg.std_dev_decay_episodes}")
+    if train_until_failure:
+        print("Training episode end condition: failure only (TimeLimit wrapper removed).", flush=True)
+        print(f"Evaluation horizon: {cfg.max_steps_per_episode} steps.", flush=True)
+    else:
+        print(f"Training rollout mode: vectorized with fallback cap of {cfg.max_steps_per_episode} steps.", flush=True)
     if args.env_id.startswith("InvertedDoublePendulum") and args.episodes < 200:
         print("Warning: InvertedDoublePendulum usually needs many more than 200 episodes for clear learning progress.", flush=True)
 
@@ -326,6 +440,20 @@ def main() -> None:
     target_critic = get_critic(num_states=num_states, num_actions=num_actions)
     target_actor.set_weights(actor_model.get_weights())
     target_critic.set_weights(critic_model.get_weights())
+
+    if args.auto_load_checkpoint == 1:
+        checkpoint_state = maybe_load_named_checkpoint(
+            named_checkpoint_paths,
+            actor_model,
+            critic_model,
+            target_actor,
+            target_critic,
+        )
+        if checkpoint_state is not None:
+            print(
+                f"Loaded checkpoint '{args.checkpoint_name}' from {output_dir} with best avg reward {checkpoint_state.get('best_avg_reward')}",
+                flush=True,
+            )
 
     actor_optimizer = keras.optimizers.Adam(cfg.actor_lr)
     critic_optimizer = keras.optimizers.Adam(cfg.critic_lr)
@@ -346,25 +474,30 @@ def main() -> None:
     best_critic_weights = None
     best_target_actor_weights = None
     best_target_critic_weights = None
-    collapse_patience = 20  # Number of evals to tolerate collapse before auto-recover
+    collapse_patience = max(10, args.eval_period * 2)
     collapse_counter = 0
     collapse_threshold = 0.7  # Fraction of best reward considered a collapse
-    auto_recover_start = 4000  # Only activate auto-recover after this many episodes
-    import csv
-    def evaluate_policy(actor_model, env, num_episodes=5, max_steps=4000, seed=42):
+    auto_recover_start = max(25, args.eval_period * 3)
+
+    if args.auto_load_checkpoint == 1 and checkpoint_state is not None:
+        best_avg_reward = float(checkpoint_state["best_avg_reward"]) if checkpoint_state.get("best_avg_reward") is not None else float("-inf")
+        best_episode = int(checkpoint_state["best_episode"]) if checkpoint_state.get("best_episode") is not None else -1
+        (
+            best_actor_weights,
+            best_critic_weights,
+            best_target_actor_weights,
+            best_target_critic_weights,
+        ) = snapshot_weights(actor_model, critic_model, target_actor, target_critic)
+
+    def evaluate_policy(actor_model, eval_env, num_episodes=5, max_steps=4000, seed=42):
         rewards = []
         lengths = []
         for ep in range(num_episodes):
-            state, _ = env.reset(seed=seed + ep)
+            state, _ = eval_env.reset(seed=seed + ep)
             total_reward = 0.0
             for t in range(max_steps):
                 action = actor_model(np.expand_dims(state, axis=0), training=False).numpy().reshape(-1)
-                state, reward, terminated, truncated, _ = env.step(action)
-                # Add penalty for poor performance (e.g., if angle is far from upright)
-                if hasattr(env, 'unwrapped') and hasattr(env.unwrapped, 'state'):
-                    theta = env.unwrapped.state[0] if len(env.unwrapped.state) > 0 else 0.0
-                    # Penalize large angles (Pendulum upright = 0)
-                    reward -= 0.1 * abs(theta)
+                state, reward, terminated, truncated, _ = eval_env.step(action)
                 total_reward += reward
                 if terminated or truncated:
                     break
@@ -372,14 +505,12 @@ def main() -> None:
             lengths.append(t + 1)
         return np.mean(rewards), np.mean(lengths)
 
-    output_dir = pathlib.Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
     run_stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     artifact_prefix = f"model_{args.env_id.split('-')[0].lower()}_{run_stamp}_ep{cfg.total_episodes}"
 
     # Use run-unique CSV and checkpoint names
     csv_path = output_dir / f"{artifact_prefix}_progress.csv"
-    csv_header = ["episode", f"avg_reward_{ROLLING_AVG_WINDOW}", "eval_avg_reward", "eval_avg_length"]
+    csv_header = ["episode", "episode_steps", f"avg_steps_{ROLLING_AVG_WINDOW}", f"avg_reward_{ROLLING_AVG_WINDOW}", "eval_avg_reward", "eval_avg_length"]
     if not csv_path.exists():
         with open(csv_path, "w", newline="") as f:
             writer = csv.writer(f)
@@ -397,11 +528,15 @@ def main() -> None:
         noise.reset()
         episode_reward = 0.0
         episode_steps = 0
+        episode_end_reason = "failure"
         episode_rewards = np.zeros(args.num_envs, dtype=np.float32) if args.num_envs > 1 else None
 
-        for step_idx in range(cfg.max_steps_per_episode):
-            episode_steps = step_idx + 1
-            if args.num_envs == 1:
+        if args.num_envs == 1:
+            truncated_logged = False
+            step_idx = 0
+            while True:
+                step_idx += 1
+                episode_steps = step_idx
                 action = choose_action(
                     state=prev_state,
                     noise=noise,
@@ -412,7 +547,45 @@ def main() -> None:
                 state, reward, terminated, truncated, _ = env.step(action)
                 replay_buffer.record(prev_state, action, float(reward), state)
                 episode_reward += float(reward)
-            else:
+
+                if replay_buffer.can_sample():
+                    state_batch, action_batch, reward_batch, next_state_batch = replay_buffer.sample()
+                    train_step(
+                        state_batch=state_batch,
+                        action_batch=action_batch,
+                        reward_batch=reward_batch,
+                        next_state_batch=next_state_batch,
+                        actor_model=actor_model,
+                        critic_model=critic_model,
+                        target_actor=target_actor,
+                        target_critic=target_critic,
+                        actor_optimizer=actor_optimizer,
+                        critic_optimizer=critic_optimizer,
+                        gamma=cfg.gamma,
+                    )
+                    update_targets(target_actor, actor_model, cfg.tau)
+                    update_targets(target_critic, critic_model, cfg.tau)
+
+                if step_idx % args.log_interval_steps == 0:
+                    print(
+                        f"Episode {episode + 1:03d}/{cfg.total_episodes} | Step {step_idx:05d} | Reward: {episode_reward:.2f} | Noise: {episode_noise:.3f}",
+                        flush=True,
+                    )
+
+                prev_state = state
+                if terminated:
+                    episode_end_reason = "failure"
+                    break
+                if truncated and not truncated_logged:
+                    episode_end_reason = "truncated"
+                    print(
+                        f"Episode {episode + 1:03d}/{cfg.total_episodes} received a truncation signal at step {step_idx}; continuing because training uses failure-only episodes.",
+                        flush=True,
+                    )
+                    truncated_logged = True
+        else:
+            for step_idx in range(cfg.max_steps_per_episode):
+                episode_steps = step_idx + 1
                 actions = choose_actions_batch(
                     states=prev_state,
                     noise=noise,
@@ -424,100 +597,120 @@ def main() -> None:
                 replay_buffer.record_batch(prev_state, actions, reward, state)
                 episode_rewards += reward.astype(np.float32)
 
-            if replay_buffer.can_sample():
-                state_batch, action_batch, reward_batch, next_state_batch = replay_buffer.sample()
-                train_step(
-                    state_batch=state_batch,
-                    action_batch=action_batch,
-                    reward_batch=reward_batch,
-                    next_state_batch=next_state_batch,
-                    actor_model=actor_model,
-                    critic_model=critic_model,
-                    target_actor=target_actor,
-                    target_critic=target_critic,
-                    actor_optimizer=actor_optimizer,
-                    critic_optimizer=critic_optimizer,
-                    gamma=cfg.gamma,
-                )
-                update_targets(target_actor, actor_model, cfg.tau)
-                update_targets(target_critic, critic_model, cfg.tau)
+                if replay_buffer.can_sample():
+                    state_batch, action_batch, reward_batch, next_state_batch = replay_buffer.sample()
+                    train_step(
+                        state_batch=state_batch,
+                        action_batch=action_batch,
+                        reward_batch=reward_batch,
+                        next_state_batch=next_state_batch,
+                        actor_model=actor_model,
+                        critic_model=critic_model,
+                        target_actor=target_actor,
+                        target_critic=target_critic,
+                        actor_optimizer=actor_optimizer,
+                        critic_optimizer=critic_optimizer,
+                        gamma=cfg.gamma,
+                    )
+                    update_targets(target_actor, actor_model, cfg.tau)
+                    update_targets(target_critic, critic_model, cfg.tau)
 
-            if args.num_envs == 1:
-                if terminated or truncated:
-                    break
-                prev_state = state
-            else:
                 prev_state = state
 
-            if (step_idx + 1) % args.log_interval_steps == 0:
-                if args.num_envs == 1:
-                    partial_reward = episode_reward
-                else:
+                if (step_idx + 1) % args.log_interval_steps == 0:
                     partial_reward = float(np.mean(episode_rewards)) if episode_rewards is not None else 0.0
-                print(
-                    f"Episode {episode + 1:03d}/{cfg.total_episodes} | Step {step_idx + 1}/{cfg.max_steps_per_episode} | Partial reward: {partial_reward:.2f}",
-                    flush=True,
-                )
+                    print(
+                        f"Episode {episode + 1:03d}/{cfg.total_episodes} | Step {step_idx + 1:05d}/{cfg.max_steps_per_episode} | Reward: {partial_reward:.2f} | Noise: {episode_noise:.3f}",
+                        flush=True,
+                    )
 
         if args.num_envs > 1 and episode_rewards is not None:
             episode_reward = float(np.mean(episode_rewards))
         episodic_rewards.append(episode_reward)
         episode_lengths.append(episode_steps)
         avg_reward = float(np.mean(episodic_rewards[-ROLLING_AVG_WINDOW:]))
+        avg_steps = float(np.mean(episode_lengths[-ROLLING_AVG_WINDOW:]))
         rolling_avg_rewards.append(avg_reward)
-        if avg_reward > best_avg_reward:
+        is_new_best = avg_reward > best_avg_reward
+        if is_new_best:
             best_avg_reward = avg_reward
             best_episode = episode + 1
-            best_actor_weights = actor_model.get_weights()
-            best_critic_weights = critic_model.get_weights()
-            best_target_actor_weights = target_actor.get_weights()
-            best_target_critic_weights = target_critic.get_weights()
+            (
+                best_actor_weights,
+                best_critic_weights,
+                best_target_actor_weights,
+                best_target_critic_weights,
+            ) = snapshot_weights(actor_model, critic_model, target_actor, target_critic)
+            save_named_checkpoint(
+                named_checkpoint_paths,
+                actor_model,
+                critic_model,
+                target_actor,
+                target_critic,
+                best_avg_reward=best_avg_reward,
+                best_episode=best_episode,
+            )
             collapse_counter = 0  # Reset collapse counter on new best
         elif (episode + 1) > auto_recover_start:
             if avg_reward < collapse_threshold * best_avg_reward:
                 collapse_counter += 1
                 if collapse_counter >= collapse_patience and best_actor_weights is not None:
                     print(f"Auto-recovering to best model from episode {best_episode} (Avg Reward: {best_avg_reward:.2f}) due to collapse.", flush=True)
-                    actor_model.set_weights(best_actor_weights)
-                    critic_model.set_weights(best_critic_weights)
-                    target_actor.set_weights(best_target_actor_weights)
-                    target_critic.set_weights(best_target_critic_weights)
+                    restore_weights(
+                        (
+                            best_actor_weights,
+                            best_critic_weights,
+                            best_target_actor_weights,
+                            best_target_critic_weights,
+                        ),
+                        actor_model,
+                        critic_model,
+                        target_actor,
+                        target_critic,
+                    )
+                    save_named_checkpoint(
+                        named_checkpoint_paths,
+                        actor_model,
+                        critic_model,
+                        target_actor,
+                        target_critic,
+                        best_avg_reward=best_avg_reward,
+                        best_episode=best_episode,
+                    )
                     collapse_counter = 0
             else:
                 collapse_counter = 0
         else:
             collapse_counter = 0
         print(
-            f"Episode {episode + 1:03d}/{cfg.total_episodes} | Steps: {episode_steps:04d} | Reward: {episode_reward:.2f} | Avg({ROLLING_AVG_WINDOW}): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
+            f"Episode {episode + 1:03d}/{cfg.total_episodes} complete | End: {episode_end_reason} | Steps: {episode_steps:05d} | AvgSteps({ROLLING_AVG_WINDOW}): {avg_steps:.1f} | Reward: {episode_reward:.2f} | Avg({ROLLING_AVG_WINDOW}): {avg_reward:.2f} | Noise: {episode_noise:.3f}",
             flush=True,
         )
 
         # Every eval_period episodes: evaluate, log to CSV, save checkpoint, auto-push
         if (episode + 1) % args.eval_period == 0 or (episode + 1) == cfg.total_episodes:
-            eval_avg_reward, eval_avg_length = evaluate_policy(actor_model, env, num_episodes=5, max_steps=cfg.max_steps_per_episode, seed=args.seed + 10000)
+            eval_avg_reward, eval_avg_length = evaluate_policy(actor_model, eval_env, num_episodes=5, max_steps=cfg.max_steps_per_episode, seed=args.seed + 10000)
             # Append new row to CSV (preserve all history)
             write_header = not csv_path.exists() or os.path.getsize(csv_path) == 0
             with open(csv_path, "a", newline="") as f:
                 writer = csv.writer(f)
                 if write_header:
                     writer.writerow(csv_header)
-                writer.writerow([episode + 1, avg_reward, eval_avg_reward, eval_avg_length])
+                writer.writerow([episode + 1, episode_steps, avg_steps, avg_reward, eval_avg_reward, eval_avg_length])
 
-            # Only allow checkpoint saving after episode 500
-            if (episode + 1) >= 1500:
-                # Overwrite checkpoint files (run-unique names)
-                # Only save checkpoints if the new avg_reward is better than the previous best
-                if avg_reward >= best_avg_reward:
-                    # Already updated above, so save weights
-                    actor_model.save_weights(output_dir / f"{artifact_prefix}_actor.weights.h5")
-                    critic_model.save_weights(output_dir / f"{artifact_prefix}_critic.weights.h5")
-                    target_actor.save_weights(output_dir / f"{artifact_prefix}_target_actor.weights.h5")
-                    target_critic.save_weights(output_dir / f"{artifact_prefix}_target_critic.weights.h5")
-                    print(f"Checkpoint updated at episode {episode + 1} (Avg Reward: {avg_reward:.2f})", flush=True)
-                else:
-                    print(f"Checkpoint NOT updated at episode {episode + 1} (Avg Reward: {avg_reward:.2f} < Best: {best_avg_reward:.2f})", flush=True)
+            print(
+                f"Evaluation | Episode {episode + 1:03d} | Avg reward: {eval_avg_reward:.2f} | Avg length: {eval_avg_length:.1f}/{cfg.max_steps_per_episode}",
+                flush=True,
+            )
+
+            if is_new_best:
+                actor_model.save_weights(output_dir / f"{artifact_prefix}_actor.weights.h5")
+                critic_model.save_weights(output_dir / f"{artifact_prefix}_critic.weights.h5")
+                target_actor.save_weights(output_dir / f"{artifact_prefix}_target_actor.weights.h5")
+                target_critic.save_weights(output_dir / f"{artifact_prefix}_target_critic.weights.h5")
+                print(f"Checkpoint updated at episode {episode + 1} (Avg Reward: {avg_reward:.2f})", flush=True)
             else:
-                print(f"Checkpoint saving is disabled until episode 100 (current: {episode + 1})", flush=True)
+                print(f"Checkpoint unchanged at episode {episode + 1} (Avg Reward: {avg_reward:.2f} | Best: {best_avg_reward:.2f})", flush=True)
 
             # Auto-push artifacts if requested
             if os.environ.get("AUTO_PUSH", "0") == "1":
@@ -538,19 +731,37 @@ def main() -> None:
                     print(f"Auto-push failed: {e}", flush=True)
 
     env.close()
+    eval_env.close()
 
 
     # At the end, restore the best weights and save them as the final best checkpoint (always overwrite same file)
     if best_actor_weights is not None:
-        actor_model.set_weights(best_actor_weights)
-        critic_model.set_weights(best_critic_weights)
-        target_actor.set_weights(best_target_actor_weights)
-        target_critic.set_weights(best_target_critic_weights)
+        restore_weights(
+            (
+                best_actor_weights,
+                best_critic_weights,
+                best_target_actor_weights,
+                best_target_critic_weights,
+            ),
+            actor_model,
+            critic_model,
+            target_actor,
+            target_critic,
+        )
         # Always use the same file names for best checkpoints (no timestamp)
         actor_model.save_weights(output_dir / "best_actor.weights.h5")
         critic_model.save_weights(output_dir / "best_critic.weights.h5")
         target_actor.save_weights(output_dir / "best_target_actor.weights.h5")
         target_critic.save_weights(output_dir / "best_target_critic.weights.h5")
+        save_named_checkpoint(
+            named_checkpoint_paths,
+            actor_model,
+            critic_model,
+            target_actor,
+            target_critic,
+            best_avg_reward=best_avg_reward,
+            best_episode=best_episode,
+        )
         print(f"Best model restored and saved from episode {best_episode} (Avg Reward: {best_avg_reward:.2f})", flush=True)
 
     actor_path = output_dir / f"{artifact_prefix}_actor.weights.h5"
@@ -579,6 +790,7 @@ def main() -> None:
         "seed": args.seed,
         "episodes": cfg.total_episodes,
         "max_steps_per_episode": cfg.max_steps_per_episode,
+        "train_until_failure": train_until_failure,
         "num_envs": args.num_envs,
         "buffer_capacity": cfg.buffer_capacity,
         "batch_size": cfg.batch_size,
@@ -600,6 +812,8 @@ def main() -> None:
         "rewards_file": rewards_path.name,
         "episode_lengths_file": episode_lengths_path.name,
         "best_actor_weights": best_actor_path.name if best_actor_weights is not None else None,
+        "named_checkpoint": args.checkpoint_name,
+        "auto_load_checkpoint": bool(args.auto_load_checkpoint),
         "progress_csv": csv_path.name,
     }
 

@@ -1,4 +1,5 @@
 import csv
+import importlib
 import matplotlib.pyplot as plt
 import pathlib
 
@@ -59,12 +60,16 @@ def plot_progress(episodes, avg_rewards_40, eval_avg_rewards, eval_avg_lengths):
     axs[1].set_title("Evaluation Episode Length Over Time")
     axs[1].legend()
     axs[1].grid(True)
-    # Set y-axis to 0-4000 (max_steps_per_episode)
-    axs[1].set_ylim(0, 4000)
+    # Dynamically scale y-axis to max episode length + 100 for visual room
+    if len(eval_avg_lengths) > 0:
+        max_len = max(eval_avg_lengths)
+        axs[1].set_ylim(0, max_len + 100)
+    else:
+        axs[1].set_ylim(0, 100)
 
     plt.tight_layout()
     try:
-        import mplcursors
+        mplcursors = importlib.import_module("mplcursors")
         # Attach tooltips to all lines and markers in both subplots
         cursor = mplcursors.cursor(axs[0].lines + axs[1].lines, hover=True)
         @cursor.connect("add")

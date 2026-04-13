@@ -11,6 +11,13 @@ This project runs the Keras DDPG Pendulum example on Iowa State Nova HPC using t
 - `scripts/watch_running_job_logs.sh`: follow current job logs.
 - `scripts/cancel_all_jobs.sh`: cancel all your queued/running jobs.
 
+## Training behavior
+
+- Single-environment training now removes Gymnasium's `TimeLimit` wrapper, so episodes only end when the pendulum actually fails.
+- `--max-steps-per-episode` is now used as the evaluation horizon, and as a fallback rollout cap only when using `--num-envs > 1`.
+- Training logs print live episode reward and current step count during each episode.
+- The trainer automatically reloads the named checkpoint from `artifacts/` on startup unless you pass `--auto-load-checkpoint 0`.
+
 ## Local quick test
 
 ```bash
@@ -117,6 +124,8 @@ Include max steps override in direct submit when needed:
 ```bash
 EPISODES=150 MAX_STEPS_PER_EPISODE=150 OUTPUT_DIR=artifacts REQUIRE_GPU=1 sbatch scripts/train_hpc.slurm
 ```
+
+With the current trainer, `MAX_STEPS_PER_EPISODE` controls evaluation length for normal single-env training and does not cut off a balancing episode early.
 
 Direct Slurm auto-push example:
 

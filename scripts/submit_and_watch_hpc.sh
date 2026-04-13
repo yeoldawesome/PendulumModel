@@ -170,7 +170,7 @@ Optional overrides:
   --env-id      Gymnasium environment id (default: InvertedDoublePendulum-v5)
   --output-dir  Training output directory (default: artifacts)
   --seed        Training random seed (default: 42)
-  --max-steps   Max env steps per episode (default: 2000)
+  --max-steps   Evaluation max steps and vector-training fallback cap (default: 2000)
   --num-envs    Number of parallel simulation envs (default: 1)
   --log-interval-steps  Print in-episode progress every N steps (default: 100)
   --actor-lr    Actor learning rate (default: 0.0003)
@@ -239,7 +239,7 @@ echo "  account: $ACCOUNT"
 echo "  partition: $PARTITION"
 echo "  episodes: $EPISODES"
 echo "  env-id: $ENV_ID"
-echo "  max-steps: $MAX_STEPS_PER_EPISODE"
+echo "  eval-max-steps: $MAX_STEPS_PER_EPISODE"
 echo "  num-envs: $NUM_ENVS"
 echo "  log-interval-steps: $LOG_INTERVAL_STEPS"
 echo "  actor-lr: $ACTOR_LR"
