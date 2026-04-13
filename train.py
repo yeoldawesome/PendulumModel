@@ -503,8 +503,8 @@ def main() -> None:
                     writer.writerow(csv_header)
                 writer.writerow([episode + 1, avg_reward, eval_avg_reward, eval_avg_length])
 
-            # Only allow checkpoint saving after episode 100
-            if (episode + 1) >= 100:
+            # Only allow checkpoint saving after episode 500
+            if (episode + 1) >= 500:
                 # Overwrite checkpoint files (run-unique names)
                 # Only save checkpoints if the new avg_reward is better than the previous best
                 if avg_reward >= best_avg_reward:
