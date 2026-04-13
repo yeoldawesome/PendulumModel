@@ -480,7 +480,15 @@ def main() -> None:
                 try:
                     subprocess.run(["git", "add", "-f", str(output_dir)], check=True)
                     subprocess.run(["git", "commit", "-m", f"hpc: checkpoint and progress at episode {episode + 1}"], check=True)
-                    subprocess.run(["git", "push"], check=True)
+                    try:
+                        subprocess.run(["git", "push"], check=True)
+                    except subprocess.CalledProcessError:
+                        print("git push failed, attempting git pull --ff-only and retrying push...", flush=True)
+                        try:
+                            subprocess.run(["git", "pull", "--ff-only", "origin", "main"], check=True)
+                            subprocess.run(["git", "push"], check=True)
+                        except Exception as e2:
+                            print(f"Auto-push failed after pull: {e2}", flush=True)
                 except Exception as e:
                     print(f"Auto-push failed: {e}", flush=True)
 
