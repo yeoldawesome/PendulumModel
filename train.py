@@ -503,17 +503,21 @@ def main() -> None:
                     writer.writerow(csv_header)
                 writer.writerow([episode + 1, avg_reward, eval_avg_reward, eval_avg_length])
 
-            # Overwrite checkpoint files (run-unique names)
-            # Only save checkpoints if the new avg_reward is better than the previous best
-            if avg_reward >= best_avg_reward:
-                # Already updated above, so save weights
-                actor_model.save_weights(output_dir / f"{artifact_prefix}_actor.weights.h5")
-                critic_model.save_weights(output_dir / f"{artifact_prefix}_critic.weights.h5")
-                target_actor.save_weights(output_dir / f"{artifact_prefix}_target_actor.weights.h5")
-                target_critic.save_weights(output_dir / f"{artifact_prefix}_target_critic.weights.h5")
-                print(f"Checkpoint updated at episode {episode + 1} (Avg Reward: {avg_reward:.2f})", flush=True)
+            # Only allow checkpoint saving after episode 100
+            if (episode + 1) >= 100:
+                # Overwrite checkpoint files (run-unique names)
+                # Only save checkpoints if the new avg_reward is better than the previous best
+                if avg_reward >= best_avg_reward:
+                    # Already updated above, so save weights
+                    actor_model.save_weights(output_dir / f"{artifact_prefix}_actor.weights.h5")
+                    critic_model.save_weights(output_dir / f"{artifact_prefix}_critic.weights.h5")
+                    target_actor.save_weights(output_dir / f"{artifact_prefix}_target_actor.weights.h5")
+                    target_critic.save_weights(output_dir / f"{artifact_prefix}_target_critic.weights.h5")
+                    print(f"Checkpoint updated at episode {episode + 1} (Avg Reward: {avg_reward:.2f})", flush=True)
+                else:
+                    print(f"Checkpoint NOT updated at episode {episode + 1} (Avg Reward: {avg_reward:.2f} < Best: {best_avg_reward:.2f})", flush=True)
             else:
-                print(f"Checkpoint NOT updated at episode {episode + 1} (Avg Reward: {avg_reward:.2f} < Best: {best_avg_reward:.2f})", flush=True)
+                print(f"Checkpoint saving is disabled until episode 100 (current: {episode + 1})", flush=True)
 
             # Auto-push artifacts if requested
             if os.environ.get("AUTO_PUSH", "0") == "1":

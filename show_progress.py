@@ -6,18 +6,25 @@ CSV_PATH = pathlib.Path("artifacts/progress.csv")
 
 def load_progress(csv_path):
     episodes = []
-    avg_rewards_10 = []
+    avg_rewards = []
     eval_avg_rewards = []
     eval_avg_lengths = []
     with open(csv_path, "r", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
             episodes.append(int(row["episode"]))
-            # If your CSV does not have avg_reward_10, compute it here or update your training script to output it
-            avg_rewards_10.append(float(row.get("avg_reward_10", row["avg_reward_40"])))
-            eval_avg_rewards.append(float(row["eval_avg_reward"]))
-            eval_avg_lengths.append(float(row["eval_avg_length"]))
-    return episodes, avg_rewards_10, eval_avg_rewards, eval_avg_lengths
+            # Try all possible rolling avg reward column names
+            if "avg_reward_10" in row:
+                avg_rewards.append(float(row["avg_reward_10"]))
+            elif "avg_reward_40" in row:
+                avg_rewards.append(float(row["avg_reward_40"]))
+            elif "avg_reward" in row:
+                avg_rewards.append(float(row["avg_reward"]))
+            else:
+                avg_rewards.append(float('nan'))
+            eval_avg_rewards.append(float(row.get("eval_avg_reward", 'nan')))
+            eval_avg_lengths.append(float(row.get("eval_avg_length", 'nan')))
+    return episodes, avg_rewards, eval_avg_rewards, eval_avg_lengths
 
 def plot_progress(episodes, avg_rewards_40, eval_avg_rewards, eval_avg_lengths):
     import numpy as np
@@ -57,10 +64,17 @@ def plot_progress(episodes, avg_rewards_40, eval_avg_rewards, eval_avg_lengths):
     plt.show()
 
 def main():
-    if not CSV_PATH.exists():
-        print(f"CSV file not found: {CSV_PATH}")
-        return
-    episodes, avg_rewards_40, eval_avg_rewards, eval_avg_lengths = load_progress(CSV_PATH)
+    csv_path = CSV_PATH
+    if not csv_path.exists():
+        # Try to find the most recent *_progress.csv in artifacts
+        artifact_dir = pathlib.Path("artifacts")
+        progress_files = sorted(artifact_dir.glob("*_progress.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not progress_files:
+            print(f"No progress CSV files found in {artifact_dir}")
+            return
+        csv_path = progress_files[0]
+        print(f"CSV file not found: {CSV_PATH}\nUsing most recent: {csv_path}")
+    episodes, avg_rewards_40, eval_avg_rewards, eval_avg_lengths = load_progress(csv_path)
     plot_progress(episodes, avg_rewards_40, eval_avg_rewards, eval_avg_lengths)
 
 if __name__ == "__main__":
