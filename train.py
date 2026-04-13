@@ -458,16 +458,19 @@ def main() -> None:
         # Every 10 episodes: evaluate, log to CSV, save checkpoint, auto-push
         if (episode + 1) % 10 == 0 or (episode + 1) == cfg.total_episodes:
             eval_avg_reward, eval_avg_length = evaluate_policy(actor_model, env, num_episodes=5, max_steps=cfg.max_steps_per_episode, seed=args.seed + 10000)
+            # Append new row to CSV (preserve all history)
+            write_header = not csv_path.exists() or os.path.getsize(csv_path) == 0
             with open(csv_path, "a", newline="") as f:
                 writer = csv.writer(f)
+                if write_header:
+                    writer.writerow(csv_header)
                 writer.writerow([episode + 1, avg_reward, eval_avg_reward, eval_avg_length])
 
-            # Save checkpoint
-            checkpoint_prefix = f"model_pendulum_{run_stamp}_ep{episode + 1}"
-            actor_model.save_weights(output_dir / f"{checkpoint_prefix}_actor.weights.h5")
-            critic_model.save_weights(output_dir / f"{checkpoint_prefix}_critic.weights.h5")
-            target_actor.save_weights(output_dir / f"{checkpoint_prefix}_target_actor.weights.h5")
-            target_critic.save_weights(output_dir / f"{checkpoint_prefix}_target_critic.weights.h5")
+            # Overwrite checkpoint files
+            actor_model.save_weights(output_dir / "checkpoint_actor.weights.h5")
+            critic_model.save_weights(output_dir / "checkpoint_critic.weights.h5")
+            target_actor.save_weights(output_dir / "checkpoint_target_actor.weights.h5")
+            target_critic.save_weights(output_dir / "checkpoint_target_critic.weights.h5")
 
             # Auto-push artifacts if requested
             if os.environ.get("AUTO_PUSH", "0") == "1":
