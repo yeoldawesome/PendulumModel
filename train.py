@@ -346,7 +346,7 @@ def main() -> None:
             state, _ = env.reset(seed=seed + ep)
             total_reward = 0.0
             for t in range(max_steps):
-                action = np.squeeze(actor_model(np.expand_dims(state, axis=0), training=False).numpy())
+                action = actor_model(np.expand_dims(state, axis=0), training=False).numpy().reshape(-1)
                 state, reward, terminated, truncated, _ = env.step(action)
                 total_reward += reward
                 if terminated or truncated:
