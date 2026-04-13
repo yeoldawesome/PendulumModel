@@ -242,7 +242,7 @@ class PendulumViewerApp(tk.Tk):
         self.model2_var = tk.StringVar()
         self.env_id_var = tk.StringVar(value="Pendulum-v1")
         self.episodes_var = tk.StringVar(value="3")
-        self.max_steps_var = tk.StringVar(value="200")
+        self.max_steps_var = tk.StringVar(value="4000")
         self.frame_delay_ms_var = tk.StringVar(value="300")
         self.seed_var = tk.StringVar(value="42")
         self.start_episode_var = tk.StringVar(value="1")

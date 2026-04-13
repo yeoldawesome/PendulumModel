@@ -23,14 +23,14 @@ class DDPGConfig:
     total_episodes: int = 500
     std_dev_start: float = 0.3
     std_dev_end: float = 0.05
-    std_dev_decay_episodes: int = 1000  # Slower noise decay for longer exploration
+    std_dev_decay_episodes: int = 4000  # Slower noise decay for longer exploration
     critic_lr: float = 0.001
     actor_lr: float = 0.0003
     gamma: float = 0.99
     tau: float = 0.002
     buffer_capacity: int = 200000
     batch_size: int = 128
-    max_steps_per_episode: int = 2000
+    max_steps_per_episode: int = 4000
 
 
 class OUActionNoise:
@@ -190,7 +190,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--render", action="store_true", help="Render environment while training (slower; not for HPC).")
     parser.add_argument("--require-gpu", type=int, default=0, choices=[0, 1], help="Exit with error when no GPU is detected.")
-    parser.add_argument("--max-steps-per-episode", type=int, default=2000, help="Maximum environment steps per episode.")
+    parser.add_argument("--max-steps-per-episode", type=int, default=4000, help="Maximum environment steps per episode.")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environment instances for faster simulation.")
     parser.add_argument("--log-interval-steps", type=int, default=100, help="Print in-episode progress every N steps.")
     parser.add_argument("--actor-lr", type=float, default=0.0003, help="Actor learning rate.")
@@ -349,9 +349,9 @@ def main() -> None:
     collapse_patience = 20  # Number of evals to tolerate collapse before auto-recover
     collapse_counter = 0
     collapse_threshold = 0.7  # Fraction of best reward considered a collapse
-    auto_recover_start = 1000  # Only activate auto-recover after this many episodes
+    auto_recover_start = 4000  # Only activate auto-recover after this many episodes
     import csv
-    def evaluate_policy(actor_model, env, num_episodes=5, max_steps=2000, seed=42):
+    def evaluate_policy(actor_model, env, num_episodes=5, max_steps=4000, seed=42):
         rewards = []
         lengths = []
         for ep in range(num_episodes):
@@ -540,16 +540,17 @@ def main() -> None:
     env.close()
 
 
-    # At the end, restore the best weights and save them as the final best checkpoint
+    # At the end, restore the best weights and save them as the final best checkpoint (always overwrite same file)
     if best_actor_weights is not None:
         actor_model.set_weights(best_actor_weights)
         critic_model.set_weights(best_critic_weights)
         target_actor.set_weights(best_target_actor_weights)
         target_critic.set_weights(best_target_critic_weights)
-        actor_model.save_weights(output_dir / f"{artifact_prefix}_best_actor.weights.h5")
-        critic_model.save_weights(output_dir / f"{artifact_prefix}_best_critic.weights.h5")
-        target_actor.save_weights(output_dir / f"{artifact_prefix}_best_target_actor.weights.h5")
-        target_critic.save_weights(output_dir / f"{artifact_prefix}_best_target_critic.weights.h5")
+        # Always use the same file names for best checkpoints (no timestamp)
+        actor_model.save_weights(output_dir / "best_actor.weights.h5")
+        critic_model.save_weights(output_dir / "best_critic.weights.h5")
+        target_actor.save_weights(output_dir / "best_target_actor.weights.h5")
+        target_critic.save_weights(output_dir / "best_target_critic.weights.h5")
         print(f"Best model restored and saved from episode {best_episode} (Avg Reward: {best_avg_reward:.2f})", flush=True)
 
     actor_path = output_dir / f"{artifact_prefix}_actor.weights.h5"
@@ -558,7 +559,7 @@ def main() -> None:
     target_critic_path = output_dir / f"{artifact_prefix}_target_critic.weights.h5"
     rewards_path = output_dir / f"{artifact_prefix}_rewards.npy"
     episode_lengths_path = output_dir / f"{artifact_prefix}_episode_lengths.npy"
-    best_actor_path = output_dir / f"{artifact_prefix}_best_actor.weights.h5"
+    best_actor_path = output_dir / "best_actor.weights.h5"
 
     actor_model.save_weights(actor_path)
     critic_model.save_weights(critic_path)

@@ -59,6 +59,8 @@ def plot_progress(episodes, avg_rewards_40, eval_avg_rewards, eval_avg_lengths):
     axs[1].set_title("Evaluation Episode Length Over Time")
     axs[1].legend()
     axs[1].grid(True)
+    # Set y-axis to 0-4000 (max_steps_per_episode)
+    axs[1].set_ylim(0, 4000)
 
     plt.tight_layout()
     plt.show()
