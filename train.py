@@ -198,6 +198,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--noise-start", type=float, default=0.3, help="Initial exploration noise stddev.")
     parser.add_argument("--noise-end", type=float, default=0.05, help="Final exploration noise stddev.")
     parser.add_argument("--noise-decay-episodes", type=int, default=300, help="Episodes over which exploration noise decays.")
+    parser.add_argument("--eval-period", type=int, default=10, help="How often (episodes) to evaluate and log progress.")
+    parser.add_argument("--checkpoint-name", type=str, default="checkpoint", help="Base name for checkpoint model files.")
     return parser.parse_args()
 
 
@@ -455,8 +457,8 @@ def main() -> None:
             flush=True,
         )
 
-        # Every 10 episodes: evaluate, log to CSV, save checkpoint, auto-push
-        if (episode + 1) % 10 == 0 or (episode + 1) == cfg.total_episodes:
+        # Every eval_period episodes: evaluate, log to CSV, save checkpoint, auto-push
+        if (episode + 1) % args.eval_period == 0 or (episode + 1) == cfg.total_episodes:
             eval_avg_reward, eval_avg_length = evaluate_policy(actor_model, env, num_episodes=5, max_steps=cfg.max_steps_per_episode, seed=args.seed + 10000)
             # Append new row to CSV (preserve all history)
             write_header = not csv_path.exists() or os.path.getsize(csv_path) == 0
@@ -467,10 +469,10 @@ def main() -> None:
                 writer.writerow([episode + 1, avg_reward, eval_avg_reward, eval_avg_length])
 
             # Overwrite checkpoint files
-            actor_model.save_weights(output_dir / "checkpoint_actor.weights.h5")
-            critic_model.save_weights(output_dir / "checkpoint_critic.weights.h5")
-            target_actor.save_weights(output_dir / "checkpoint_target_actor.weights.h5")
-            target_critic.save_weights(output_dir / "checkpoint_target_critic.weights.h5")
+            actor_model.save_weights(output_dir / f"{args.checkpoint_name}_actor.weights.h5")
+            critic_model.save_weights(output_dir / f"{args.checkpoint_name}_critic.weights.h5")
+            target_actor.save_weights(output_dir / f"{args.checkpoint_name}_target_actor.weights.h5")
+            target_critic.save_weights(output_dir / f"{args.checkpoint_name}_target_critic.weights.h5")
 
             # Auto-push artifacts if requested
             if os.environ.get("AUTO_PUSH", "0") == "1":

@@ -31,6 +31,8 @@ PUSH_REMOTE="origin"
 STRICT_PUSH="0"
 GIT_USER_NAME="yeoldawesome"
 GIT_USER_EMAIL="dnlonglett@gmail.com"
+EVAL_PERIOD="30"
+CHECKPOINT_NAME="checkpoint"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -142,6 +144,14 @@ while [[ $# -gt 0 ]]; do
       GIT_USER_EMAIL="$2"
       shift 2
       ;;
+    --eval-period)
+      EVAL_PERIOD="$2"
+      shift 2
+      ;;
+    --checkpoint-name)
+      CHECKPOINT_NAME="$2"
+      shift 2
+      ;;
     -h|--help)
       cat <<EOF
 Usage: $0 [options]
@@ -180,6 +190,8 @@ Optional overrides:
   --strict-push Fail the Slurm job if push fails
   --git-user-name  Git user.name to use for auto-commit
   --git-user-email Git user.email to use for auto-commit
+  --eval-period  Evaluation period (default: 10)
+  --checkpoint-name  Checkpoint name (default: checkpoint)
 EOF
       exit 0
       ;;
@@ -263,7 +275,7 @@ submit_output=$(sbatch \
   --cpus-per-task="$CPUS" \
   --mail-user="$EMAIL" \
   --mail-type=BEGIN,END,FAIL \
-  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",LOG_INTERVAL_STEPS="$LOG_INTERVAL_STEPS",ACTOR_LR="$ACTOR_LR",CRITIC_LR="$CRITIC_LR",BUFFER_CAPACITY="$BUFFER_CAPACITY",BATCH_SIZE="$BATCH_SIZE",NOISE_START="$NOISE_START",NOISE_END="$NOISE_END",NOISE_DECAY_EPISODES="$NOISE_DECAY_EPISODES",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL" \
+  --export=ALL,EPISODES="$EPISODES",ENV_ID="$ENV_ID",OUTPUT_DIR="$OUTPUT_DIR",SEED="$SEED",MAX_STEPS_PER_EPISODE="$MAX_STEPS_PER_EPISODE",NUM_ENVS="$NUM_ENVS",LOG_INTERVAL_STEPS="$LOG_INTERVAL_STEPS",ACTOR_LR="$ACTOR_LR",CRITIC_LR="$CRITIC_LR",BUFFER_CAPACITY="$BUFFER_CAPACITY",BATCH_SIZE="$BATCH_SIZE",NOISE_START="$NOISE_START",NOISE_END="$NOISE_END",NOISE_DECAY_EPISODES="$NOISE_DECAY_EPISODES",AUTO_PUSH="$AUTO_PUSH",PUSH_BRANCH="$PUSH_BRANCH",PUSH_REMOTE="$PUSH_REMOTE",STRICT_PUSH="$STRICT_PUSH",GIT_USER_NAME="$GIT_USER_NAME",GIT_USER_EMAIL="$GIT_USER_EMAIL",EVAL_PERIOD="$EVAL_PERIOD",CHECKPOINT_NAME="$CHECKPOINT_NAME" \
   "$SCRIPT_PATH")
 
 echo "$submit_output"
